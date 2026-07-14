@@ -1,0 +1,153 @@
+---
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main, beta]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - uses: helm/chart-testing-action@v2
+
+      - name: Lint charts
+        run: ct lint --config ct.yaml --all
+
+      - name: yamllint
+        run: pipx run yamllint -c .yamllint.yaml charts/ .github/
+
+      - name: shellcheck
+        run: shellcheck -x scripts/*.sh tests/integration/*.sh
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - run: npm install
+
+      - name: commitlint
+        run: |
+          npx commitlint \
+            --from "${{ github.event.pull_request.base.sha }}" \
+            --to "${{ github.event.pull_request.head.sha }}" \
+            --verbose
+
+      - name: Validate semantic release configuration
+        run: ./scripts/validate-release-config.sh
+
+  release-check:
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - run: npm install
+
+      # --dry-run stops it publishing; --no-ci bypasses the "not on a release
+      # branch" guard so the plugin chain is still exercised on a PR.
+      - name: semantic-release (dry run)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release --dry-run --no-ci
+
+  build-test:
+    needs: [lint, release-check]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar xz -C /usr/local/bin kubeconform
+
+      - name: Package
+        run: ./scripts/build.sh
+
+      - name: Render matrix, hardening assertions, guard assertions
+        run: ./scripts/template.sh
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: bitcoin-stack-e2e
+
+      - name: End-to-end (node + pool on regtest)
+        env:
+          REUSE_CLUSTER: '1'
+          DEBUG: '1'
+        run: ./scripts/test.sh
+
+      - name: Render for scanning
+        run: |
+          mkdir -p /tmp/rendered
+          helm template bs charts/bitcoin-stack > /tmp/rendered/all.yaml
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: /tmp/rendered
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Fail on any HIGH/CRITICAL misconfiguration
+        run: |
+          COUNT=$(grep -o '"level":"error"' trivy-results.sarif | wc -l || echo 0)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::Trivy found ${COUNT} HIGH/CRITICAL misconfigurations"
+            exit 1
+          fi
+
+      - uses: github/codeql-action/upload-sarif@v4
+        if: success() || failure()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-charts
+
+      - uses: anchore/sbom-action@v0
+        with:
+          path: charts/
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: The SBOM must not be empty
+        run: |
+          PACKAGE_COUNT=$(jq '.packages | length' sbom.spdx.json)
+          if [ "$PACKAGE_COUNT" -lt 1 ]; then
+            echo "❌ SBOM has no packages"
+            exit 1
+          fi
+          echo "✅ SBOM lists ${PACKAGE_COUNT} packages"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom-pr-${{ github.event.pull_request.number }}
+          path: sbom.spdx.json
+          retention-days: 7

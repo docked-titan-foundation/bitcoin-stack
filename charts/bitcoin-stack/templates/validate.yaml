@@ -1,0 +1,6 @@
+{{- /*
+This template renders nothing. It exists so the cross-chart guards in
+_validate.tpl actually run on every `helm template`, `helm install` and ArgoCD
+sync — a `define` on its own is never executed.
+*/ -}}
+{{- include "bitcoin-stack.validate" . -}}

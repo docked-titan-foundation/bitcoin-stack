@@ -1,0 +1,58 @@
+{{- $net := .Values.node.network -}}
+{{- $section := ternary "main" $net (eq $net "main") -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bitcoin-node.configName" . }}
+  labels:
+    {{- include "bitcoin-node.labels" . | nindent 4 }}
+data:
+  # bitcoin.conf, rendered from node.config / node.configList / node.extraConfig.
+  # Nothing here is hardcoded by the chart: any bitcoind option is reachable from
+  # values.yaml. Credentials are NOT in this file — they arrive separately as
+  # rpc.conf and are pulled in with includeconf, so no secret ever lands in a
+  # ConfigMap.
+  bitcoin.conf: |
+    # Managed by the bitcoin-stack chart. Edit values.yaml, not this file.
+    printtoconsole=1
+    {{- if ne $net "main" }}
+    {{ $net }}=1
+    {{- end }}
+
+    {{- /* Simple key=value options. */}}
+    {{- range $key, $value := .Values.node.config }}
+    {{ $key }}={{ $value }}
+    {{- end }}
+
+    {{- /* Options bitcoind accepts more than once. */}}
+    {{- range $key, $values := .Values.node.configList }}
+    {{- range $value := $values }}
+    {{ $key }}={{ $value }}
+    {{- end }}
+    {{- end }}
+
+    {{- /* Raw escape hatch. */}}
+    {{- range $line := .Values.node.extraConfig }}
+    {{ $line }}
+    {{- end }}
+
+    {{- if .Values.rpc.enabled }}
+
+    # RPC credentials, from a Secret. Never in this ConfigMap.
+    includeconf=rpc.conf
+    {{- end }}
+
+    # Network-scoped options. bitcoind wants per-network ports inside the matching
+    # section, not at the top level, or it ignores them with a warning.
+    [{{ $section }}]
+    {{- if .Values.rpc.enabled }}
+    server=1
+    rpcbind=0.0.0.0
+    rpcport={{ include "bitcoin-node.rpcPort" . }}
+    rpcallowip={{ .Values.rpc.allowSubnet }}
+    {{- end }}
+    bind=0.0.0.0:{{ .Values.p2p.port }}
+    {{- if .Values.zmq.enabled }}
+    zmqpubrawblock=tcp://0.0.0.0:{{ include "bitcoin-node.zmqRawBlockPort" . }}
+    zmqpubhashblock=tcp://0.0.0.0:{{ .Values.zmq.hashBlockPort }}
+    {{- end }}

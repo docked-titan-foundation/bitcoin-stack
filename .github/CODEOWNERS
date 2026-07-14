@@ -1,0 +1,4 @@
+# Codeowners file for public-pool
+# https://help.github.com/en/github/creating-cloning-and-archiving-repositories/about-code-owners
+
+* @albertoig @s-release-bot

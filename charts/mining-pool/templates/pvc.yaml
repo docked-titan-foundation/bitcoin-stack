@@ -1,0 +1,23 @@
+{{- $isCk := eq .Values.pool.implementation "ckpool" -}}
+{{- $storage := ternary .Values.pool.ckpool.storage .Values.pool.publicPool.storage $isCk -}}
+{{- if $storage.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mining-pool.name" . }}-data
+  labels:
+    {{- include "mining-pool.labels" . | nindent 4 }}
+  {{- if $storage.keepOnDelete }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes:
+    - {{ $storage.accessMode }}
+  {{- if $storage.storageClass }}
+  storageClassName: {{ $storage.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $storage.size }}
+{{- end }}

@@ -1,0 +1,32 @@
+# Build artifacts
+*.egg-info/
+*.whl
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+.kilo/
+
+node_modules/

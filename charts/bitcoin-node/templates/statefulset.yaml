@@ -1,0 +1,150 @@
+{{- include "bitcoin-node.validate" . -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "bitcoin-node.name" . }}
+  labels:
+    {{- include "bitcoin-node.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "bitcoin-node.p2p.name" . }}
+  # Not configurable, and never will be. Two bitcoinds on one datadir destroy it,
+  # and a Bitcoin node does not scale horizontally — a second replica would be a
+  # second full copy of the chain, not more capacity.
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "bitcoin-node.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "bitcoin-node.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ include "bitcoin-node.name" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Roll the pod when bitcoin.conf changes. subPath mounts do not update in
+        # place, so without this the ConfigMap would change and the running node
+        # would keep using the old config until something else happened to restart
+        # it — the kind of drift you discover months later.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "bitcoin-node.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: bitcoind
+          image: {{ include "bitcoin-node.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Run bitcoind directly, bypassing the image's entrypoint on purpose.
+          # That entrypoint does `chown -R $BITCOIN_DATA`, which fails against the
+          # read-only ConfigMap and Secret files mounted into the datadir and puts
+          # the container in a crash loop. bitcoind picks up bitcoin.conf from the
+          # datadir by itself, which is all the entrypoint was needed for.
+          command:
+            - bitcoind
+            - -datadir={{ .Values.dataDir }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: p2p
+              containerPort: {{ .Values.p2p.port }}
+            {{- if .Values.rpc.enabled }}
+            - name: rpc
+              containerPort: {{ include "bitcoin-node.rpcPort" . }}
+            {{- end }}
+            {{- if .Values.zmq.enabled }}
+            - name: zmq-rawblock
+              containerPort: {{ include "bitcoin-node.zmqRawBlockPort" . }}
+            - name: zmq-hashblock
+              containerPort: {{ .Values.zmq.hashBlockPort }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.dataDir }}
+            - name: config
+              mountPath: {{ .Values.dataDir }}/bitcoin.conf
+              subPath: bitcoin.conf
+              readOnly: true
+            {{- if .Values.rpc.enabled }}
+            - name: rpc-credentials
+              mountPath: {{ .Values.dataDir }}/rpc.conf
+              subPath: rpc.conf
+              readOnly: true
+            {{- end }}
+            # readOnlyRootFilesystem is on: the datadir is the only thing bitcoind
+            # is allowed to write to, and /tmp is a scratch mount rather than a
+            # writable root.
+            - name: tmp
+              mountPath: /tmp
+          {{- if not .Values.recovery.enabled }}
+          # bitcoind opens its P2P listener once the block index is loaded, so a
+          # TCP check is a liveness signal that needs no RPC credentials.
+          startupProbe:
+            tcpSocket:
+              port: p2p
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            tcpSocket:
+              port: p2p
+            periodSeconds: 30
+            failureThreshold: 4
+          {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ if .Values.rpc.enabled }}rpc{{ else }}p2p{{ end }}
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "bitcoin-node.configName" . }}
+        {{- if .Values.rpc.enabled }}
+        - name: rpc-credentials
+          secret:
+            secretName: {{ include "bitcoin-node.secretName" . }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        {{- if .Values.storage.keepOnDelete }}
+        annotations:
+          # Hundreds of gigabytes that take weeks to re-download. Deleting the
+          # release must not delete the chain.
+          helm.sh/resource-policy: keep
+        {{- end }}
+      spec:
+        accessModes:
+          - {{ .Values.storage.accessMode }}
+        {{- if .Values.storage.storageClass }}
+        storageClassName: {{ .Values.storage.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}

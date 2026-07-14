@@ -1,0 +1,43 @@
+{
+  "branches": [
+    "main",
+    { "name": "beta", "prerelease": true }
+  ],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "addReleases": "bottom"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "./scripts/update-versions.sh ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "CHANGELOG.md",
+          "package.json",
+          "README.md",
+          ".mise.toml",
+          "charts/bitcoin-stack/Chart.yaml",
+          "charts/bitcoin-node/Chart.yaml",
+          "charts/mining-pool/Chart.yaml"
+        ],
+        "message": "chore(release): ${nextRelease.version} \n\n${nextRelease.notes}"
+      }
+    ]
+  ]
+}

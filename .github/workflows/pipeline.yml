@@ -1,0 +1,353 @@
+---
+name: CI_CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to rebuild (e.g., v1.2.0)'
+        required: false
+  push:
+    branches: [main, beta]
+    tags: ['v*']
+
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CHART_REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  # ─── GATE 1: Lint ────────────────────────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - uses: helm/chart-testing-action@v2
+
+      - name: Lint charts
+        run: ct lint --config ct.yaml --all
+
+      - name: yamllint
+        run: pipx run yamllint -c .yamllint.yaml charts/ .github/
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - run: npm install
+
+      - name: commitlint
+        run: |
+          FROM_SHA="${{ github.event.before }}"
+          if [ -z "$FROM_SHA" ] \
+             || [ "$FROM_SHA" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${FROM_SHA}^{commit}" 2>/dev/null; then
+            npx commitlint --last --verbose
+          else
+            npx commitlint --from "$FROM_SHA" --to "${{ github.sha }}" --verbose
+          fi
+
+  # ─── GATE 2: Release ─────────────────────────────────────────────────────────
+  release:
+    needs: lint
+    if: >-
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta') &&
+      !contains(github.actor, 'github-actions[bot]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      packages: write
+      id-token: write
+    outputs:
+      new_release_published: ${{ steps.final-status.outputs.new_release_published }}
+      new_release_version: ${{ steps.final-status.outputs.new_release_version }}
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: generate_token
+        with:
+          client-id: ${{ secrets.TITAN_RELEASER_ID }}
+          private-key: ${{ secrets.TITAN_RELEASER_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Import the release bot's GPG key
+        env:
+          TITAN_RELEASER_BASE64_GPG_KEY: ${{ secrets.TITAN_RELEASER_BASE64_GPG_KEY }}
+        run: |
+          echo -n "$TITAN_RELEASER_BASE64_GPG_KEY" | base64 --decode | gpg --batch --import
+
+      - name: Configure signed commits
+        env:
+          TITAN_RELEASER_GPG_KEY_ID: ${{ secrets.TITAN_RELEASER_GPG_KEY_ID }}
+        run: |
+          cat > /tmp/gpg.sh <<'EOF'
+          #!/bin/bash
+          gpg --batch --pinentry-mode loopback \
+              --passphrase "$TITAN_RELEASER_GPG_PASSPHRASE" "$@"
+          EOF
+          chmod +x /tmp/gpg.sh
+          git config commit.gpgsign true
+          git config user.signingkey "$TITAN_RELEASER_GPG_KEY_ID"
+          git config gpg.program /tmp/gpg.sh
+
+      - run: npm install
+
+      - name: semantic-release
+        id: semantic
+        env:
+          TITAN_RELEASER_GPG_PASSPHRASE: ${{ secrets.TITAN_RELEASER_GPG_PASSPHRASE }}
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          GIT_AUTHOR_NAME: s-release[bot]
+          GIT_AUTHOR_EMAIL: ${{ secrets.TITAN_RELEASER_EMAIL }}
+          GIT_COMMITTER_NAME: s-release[bot]
+          GIT_COMMITTER_EMAIL: ${{ secrets.TITAN_RELEASER_EMAIL }}
+        run: |
+          npx semantic-release 2>&1 | tee /tmp/semantic-output.txt
+          VERSION=$(grep -oP 'Published release \K[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' \
+            /tmp/semantic-output.txt || echo "")
+          if [ -n "$VERSION" ]; then
+            echo "new_release_published=true" >> "$GITHUB_OUTPUT"
+            echo "new_release_version=${VERSION}" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_release_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Self-healing: if the latest published chart is missing a signature or an
+      # SBOM attestation, rebuild it even though no new release was cut. An
+      # unsigned artifact must never be left sitting in the registry.
+      - name: Verify the published chart is still signed and attested
+        id: verify-existing
+        if: steps.semantic.outputs.new_release_published != 'true'
+        continue-on-error: true
+        run: |
+          LATEST=$(git tag --sort=-v:refname | grep -v -- '-' | head -1 | sed 's/^v//')
+          if [ -z "$LATEST" ]; then
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          REF="${CHART_REGISTRY}/bitcoin-stack:${LATEST}"
+          if cosign verify "$REF" \
+               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+               --certificate-identity-regexp "https://github.com/${{ github.repository }}" \
+             && cosign verify-attestation --type spdxjson "$REF" \
+               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+               --certificate-identity-regexp "https://github.com/${{ github.repository }}"; then
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::${REF} is unsigned or unattested — rebuilding"
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+            echo "rebuild_version=${LATEST}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: sigstore/cosign-installer@v3
+        if: steps.semantic.outputs.new_release_published != 'true'
+
+      - name: Final status
+        id: final-status
+        run: |
+          if [ "${{ steps.semantic.outputs.new_release_published }}" = "true" ]; then
+            echo "new_release_published=true" >> "$GITHUB_OUTPUT"
+            echo "new_release_version=${{ steps.semantic.outputs.new_release_version }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.verify-existing.outputs.rebuild }}" = "true" ]; then
+            echo "new_release_published=true" >> "$GITHUB_OUTPUT"
+            echo "new_release_version=${{ steps.verify-existing.outputs.rebuild_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_release_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─── GATE 3-6: Package, test, scan, SBOM ─────────────────────────────────────
+  build:
+    needs: release
+    if: needs.release.result == 'success' && needs.release.outputs.new_release_published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      security-events: write
+    outputs:
+      chart_digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.release.outputs.new_release_version }}
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar xz -C /usr/local/bin kubeconform
+
+      # GATE 3: package
+      - name: Package the charts
+        env:
+          VERSION: v${{ needs.release.outputs.new_release_version }}
+        run: ./scripts/build.sh
+
+      # GATE 4: the values matrix must render, be valid Kubernetes, be hardened,
+      # and the safety guards must refuse what they exist to refuse.
+      - name: Render matrix, hardening assertions, guard assertions
+        run: ./scripts/template.sh
+
+      # GATE 5: a real cluster. regtest means bitcoind is ready in seconds, so
+      # this is a true end-to-end test of node + pool, not a smoke test.
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: bitcoin-stack-e2e
+
+      - name: End-to-end (node + pool on regtest)
+        env:
+          REUSE_CLUSTER: '1'
+          DEBUG: '1'
+        run: ./scripts/test.sh
+
+      # GATE 6: misconfiguration scan of the rendered manifests
+      - name: Render for scanning
+        run: |
+          mkdir -p /tmp/rendered
+          helm template bs charts/bitcoin-stack > /tmp/rendered/all.yaml
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: /tmp/rendered
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Fail on any HIGH/CRITICAL misconfiguration
+        run: |
+          COUNT=$(grep -o '"level":"error"' trivy-results.sarif | wc -l || echo 0)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::Trivy found ${COUNT} HIGH/CRITICAL misconfigurations"
+            exit 1
+          fi
+
+      - uses: github/codeql-action/upload-sarif@v4
+        if: success() || failure()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-charts
+
+      # GATE 7: publish
+      - name: Log in to ghcr
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push the chart and capture its digest
+        id: push
+        env:
+          VERSION: ${{ needs.release.outputs.new_release_version }}
+        run: |
+          # Only the umbrella is published: it carries the other two inside it.
+          # Everything downstream signs the DIGEST, never the tag.
+          helm push "dist/bitcoin-stack-${VERSION}.tgz" \
+            "oci://${CHART_REGISTRY}" 2>&1 | tee /tmp/push.log
+          DIGEST=$(grep -oP 'Digest: \K sha256:[a-f0-9]{64}' /tmp/push.log | tr -d ' ' || true)
+          if [ -z "$DIGEST" ]; then
+            DIGEST=$(grep -oP 'sha256:[a-f0-9]{64}' /tmp/push.log | head -1)
+          fi
+          if [ -z "$DIGEST" ]; then
+            echo "::error::could not determine the pushed chart's digest"
+            exit 1
+          fi
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Published ${CHART_REGISTRY}/bitcoin-stack@${DIGEST}"
+
+      # GATE 8: SBOM
+      - uses: anchore/sbom-action@v0
+        with:
+          path: charts/
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom-${{ needs.release.outputs.new_release_version }}
+          path: sbom.spdx.json
+
+  # ─── GATE 9: Provenance ──────────────────────────────────────────────────────
+  attest:
+    needs: [release, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+      artifact-metadata: write
+      packages: write
+    steps:
+      - name: Log in to ghcr
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.CHART_REGISTRY }}/bitcoin-stack
+          subject-digest: ${{ needs.build.outputs.chart_digest }}
+          push-to-registry: true
+          create-storage-record: true
+
+  # ─── GATE 10: Signature ──────────────────────────────────────────────────────
+  sign:
+    needs: [release, build, attest]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Keyless, by digest. cosign does not care that this is a chart rather than
+      # an image — an OCI artifact is an OCI artifact.
+      - name: Sign the chart
+        run: |
+          cosign sign --yes \
+            "${CHART_REGISTRY}/bitcoin-stack@${{ needs.build.outputs.chart_digest }}"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: sbom-${{ needs.release.outputs.new_release_version }}
+
+      - name: Attest the SBOM
+        run: |
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            "${CHART_REGISTRY}/bitcoin-stack@${{ needs.build.outputs.chart_digest }}"

@@ -1,0 +1,36 @@
+apiVersion: v2
+name: bitcoin-stack
+description: A hardened Bitcoin node (Knots or Core) and mining pool (public-pool or ckpool), wired together and installable in one command.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - bitcoin
+  - bitcoind
+  - knots
+  - core
+  - mining
+  - stratum
+  - solo-mining
+home: https://github.com/docked-titan-foundation/bitcoin-stack
+sources:
+  - https://github.com/docked-titan-foundation/bitcoin-stack
+maintainers:
+  - name: Docked Titan Foundation
+    url: https://github.com/docked-titan-foundation
+dependencies:
+  - name: bitcoin-node
+    version: 0.1.0
+    repository: file://../bitcoin-node
+    condition: bitcoin-node.enabled
+  - name: mining-pool
+    version: 0.1.0
+    repository: file://../mining-pool
+    condition: mining-pool.enabled
+annotations:
+  org.opencontainers.image.title: bitcoin-stack
+  org.opencontainers.image.description: Hardened Bitcoin node + mining pool
+  org.opencontainers.image.source: https://github.com/docked-titan-foundation/bitcoin-stack
+  org.opencontainers.image.licenses: GPL-3.0
+  org.opencontainers.image.vendor: Docked Titan Foundation

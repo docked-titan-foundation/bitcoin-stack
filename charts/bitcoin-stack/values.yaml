@@ -1,0 +1,79 @@
+# bitcoin-stack — a Bitcoin node and a mining pool that mines on it.
+#
+#   miner ──stratum:3333──> mining-pool ──RPC + ZMQ──> bitcoin-node ──P2P──> the network
+#
+# Install both (the default), or set either `enabled: false` to install one. The
+# node is useful on its own; the pool is not — it needs a node to mine on, and if
+# you disable the node you must point the pool at one yourself.
+
+# ── The wiring ─────────────────────────────────────────────────────────────────
+# This is the single source of truth for everything the two charts must agree on.
+# Both of them read it: the node serves on these ports with this username, and the
+# pool dials exactly the same ones. There is no second copy to forget to update.
+#
+# rpcHost and secretName use the node chart's fixed, release-independent names, so
+# they are correct by construction. Change these only if you are pointing the pool
+# at a node that this release does not manage.
+global:
+  bitcoinNode:
+    rpcHost: bitcoin-node-rpc
+    rpcPort: 8332
+    rpcUsername: bitcoin
+    zmqRawBlockPort: 28332
+    secretName: bitcoin-node-rpc-credentials
+
+# ── The node ───────────────────────────────────────────────────────────────────
+# Every value of the bitcoin-node chart is available here. See its values.yaml —
+# these are only the ones worth surfacing.
+bitcoin-node:
+  enabled: true
+
+  node:
+    # knots | core
+    implementation: knots
+    # main | test | signet | regtest
+    network: main
+    config:
+      dbcache: 4096
+      maxconnections: 64
+      listen: 1
+      prune: 0
+
+  # A mainnet archival node needs ~650-700GB today and grows ~60GB/year.
+  storage:
+    size: 900Gi
+
+  # limits.memory must be >= dbcache + 2Gi or the chart refuses to install: an
+  # OOM kill during a chainstate flush corrupts the datadir.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 6Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+  # generated | existingSecret | externalSecret
+  secret:
+    provider: generated
+
+# ── The pool ───────────────────────────────────────────────────────────────────
+mining-pool:
+  enabled: true
+
+  pool:
+    # public-pool | ckpool
+    implementation: public-pool
+    identifier: "solo"
+    # mainnet | testnet. Must match the node's network: a pool decoding mainnet
+    # addresses while mining on a testnet node is a misconfiguration the chart
+    # will refuse to install (see the guard in templates/_validate.tpl).
+    network: mainnet
+
+  stratum:
+    port: 3333
+    service:
+      # The port miners connect to. Stratum is raw TCP, so it needs its own
+      # address rather than an HTTP Ingress. On a homelab, MetalLB gives you one.
+      type: LoadBalancer
+      loadBalancerIP: ""

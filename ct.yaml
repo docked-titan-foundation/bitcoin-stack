@@ -1,0 +1,11 @@
+# chart-testing (ct) config — used by `mise run lint:chart` and by CI.
+remote: origin
+target-branch: beta
+chart-dirs:
+  - charts
+validate-maintainers: false
+check-version-increment: false
+helm-extra-args: --timeout 600s
+# The e2e install runs on regtest: bitcoind comes up in seconds with no chain to
+# download, so `ct install` is a real end-to-end test rather than a smoke test.
+helm-extra-set-args: --set=global.testMode=true

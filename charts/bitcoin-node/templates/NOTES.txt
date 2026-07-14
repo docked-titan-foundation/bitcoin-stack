@@ -1,0 +1,56 @@
+{{ include "bitcoin-node.name" . }} — Bitcoin {{ .Values.node.implementation | title }} on {{ .Values.node.network }}
+
+  image     {{ include "bitcoin-node.image" . }}
+  dbcache   {{ .Values.node.config.dbcache }} MiB (memory limit {{ .Values.resources.limits.memory }})
+  datadir   {{ .Values.storage.size }}{{ if gt (int (default 0 .Values.node.config.prune)) 0 }}, pruned to {{ .Values.node.config.prune }} MiB{{ else }}, archival{{ end }}
+  RPC       {{ include "bitcoin-node.rpcHost" . }}:{{ .Values.rpc.port }} (in-cluster only)
+
+Watch it sync:
+
+  kubectl logs -n {{ .Release.Namespace }} sts/{{ include "bitcoin-node.name" . }} -f
+
+{{- if eq .Values.node.network "main" }}
+
+A mainnet node downloads and verifies the entire chain before it is useful. That
+takes days, and it is I/O-bound — do not expect it to be quick. Progress shows in
+the logs as `progress=0.xx`.
+{{- end }}
+
+{{- if .Values.recovery.enabled }}
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  RECOVERY MODE IS ON — the startup and liveness probes are disabled.         ║
+║                                                                              ║
+║  This is correct while the node is reindexing, and wrong the rest of the      ║
+║  time: a hung bitcoind will not be restarted for you. Set recovery.enabled    ║
+║  back to false once the node is healthy.                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+{{- end }}
+
+{{- if eq .Values.secret.provider "existingSecret" }}
+
+The RPC credential comes from the Secret "{{ .Values.secret.existingSecret.name }}",
+which must already exist and must contain the keys `rpc.conf`, `rpc-password` and
+`rpc-username`. If bitcoind cannot start, check that first.
+{{- end }}
+
+Two things that will cost you days if you learn them the hard way:
+
+  1. NEVER `kubectl delete pod --force` this node. SIGKILL during a chainstate
+     flush corrupts the datadir, and the repair is a multi-day reindex. A plain
+     `kubectl delete pod` and up to {{ .Values.terminationGracePeriodSeconds }}s of patience is the correct move.
+
+  2. `storage.size` and `storage.storageClass` CANNOT be changed by editing
+     values and upgrading. They live in the StatefulSet's volumeClaimTemplates,
+     which Kubernetes forbids updating — the API server will reject the whole
+     StatefulSet apply, and it keeps rejecting it, so every later change to this
+     release silently stops landing too. To grow the volume:
+
+       kubectl patch pvc data-{{ include "bitcoin-node.name" . }}-0 -n {{ .Release.Namespace }} \
+         -p '{"spec":{"resources":{"requests":{"storage":"<new size>"}}}}'
+       # then update storage.size to match, and:
+       kubectl delete statefulset {{ include "bitcoin-node.name" . }} -n {{ .Release.Namespace }} --cascade=orphan
+       helm upgrade ...
+
+     --cascade=orphan leaves the running pod and the PVC alone. The node never
+     stops.

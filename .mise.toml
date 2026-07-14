@@ -1,0 +1,72 @@
+[tools]
+# Node powers commitlint / semantic-release; match the CI runner.
+node          = "24"
+
+# Chart toolchain
+helm          = "3.19.0"
+kubectl       = "1.34.1"
+chart-testing = "3.14.0"
+kubeconform   = "0.7.0"
+kind          = "0.30.0"
+yamllint      = "1.37.1"
+shellcheck    = "0.11.0"
+
+[env]
+REGISTRY   = "ghcr.io/docked-titan-foundation"
+CHART_NAME = "bitcoin-stack"
+# Local package version only — the real version comes from semantic-release. Kept
+# in step with the latest release by scripts/update-versions.sh.
+VERSION    = "v0.0.0.local"
+# Set DEBUG=1 to stream build/test output instead of only the pass/fail line.
+DEBUG      = "0"
+
+# ── Build & test ──────────────────────────────────────────────────────────────
+
+[tasks.build]
+description = "Package all three charts into dist/"
+run = "./scripts/build.sh"
+
+[tasks.template]
+description = "Render the whole values matrix through kubeconform and assert the safety guards fire"
+run = "./scripts/template.sh"
+
+[tasks.test]
+description = "Spin up kind, install the stack on regtest, assert the node RPC and stratum port really work"
+depends = ["build"]
+run = "./scripts/test.sh"
+
+[tasks."test:unit"]
+description = "helm unittest — values logic, guards, wiring derivation"
+run = "mise exec -- helm unittest charts/bitcoin-node charts/mining-pool charts/bitcoin-stack"
+
+# ── Linting ───────────────────────────────────────────────────────────────────
+
+[tasks.lint]
+description = "Run all linters"
+depends = ["lint:chart", "lint:yaml", "lint:shell"]
+
+[tasks."lint:chart"]
+description = "chart-testing lint over every chart"
+run = "mise exec -- ct lint --config ct.yaml --all"
+
+[tasks."lint:yaml"]
+description = "yamllint the chart values and the workflows"
+run = "mise exec -- yamllint -c .yamllint.yaml charts/ .github/"
+
+[tasks."lint:shell"]
+description = "shellcheck every script"
+run = "mise exec -- shellcheck -x scripts/*.sh tests/integration/*.sh"
+
+# ── Release plumbing ──────────────────────────────────────────────────────────
+
+[tasks.commitlint]
+description = "Lint a commit message (pass the message file as an argument)"
+run = "npx commitlint --edit"
+
+[tasks."release:validate"]
+description = "Check the semantic-release config is parseable and the plugin chain loads"
+run = "./scripts/validate-release-config.sh"
+
+[tasks.precommit]
+description = "Run the pre-commit hooks over every file"
+run = "pre-commit run --all-files"

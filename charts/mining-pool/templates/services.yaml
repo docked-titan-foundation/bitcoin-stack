@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mining-pool.stratum.name" . }}
+  labels:
+    {{- include "mining-pool.labels" . | nindent 4 }}
+  {{- with .Values.stratum.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.stratum.service.type }}
+  {{- if and (eq .Values.stratum.service.type "LoadBalancer") .Values.stratum.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.stratum.service.loadBalancerIP }}
+  {{- end }}
+  {{- if eq .Values.stratum.service.type "LoadBalancer" }}
+  externalTrafficPolicy: {{ .Values.stratum.service.externalTrafficPolicy }}
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: {{ include "mining-pool.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: stratum
+      port: {{ .Values.stratum.port }}
+      targetPort: stratum
+      protocol: TCP
+{{- if ne .Values.pool.implementation "ckpool" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mining-pool.api.name" . }}
+  labels:
+    {{- include "mining-pool.labels" . | nindent 4 }}
+spec:
+  # The stats API. ClusterIP: it is not the miner-facing port.
+  type: {{ .Values.pool.publicPool.api.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "mining-pool.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: api
+      port: {{ .Values.pool.publicPool.api.port }}
+      targetPort: api
+{{- end }}

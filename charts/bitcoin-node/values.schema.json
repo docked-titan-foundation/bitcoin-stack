@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "bitcoin-node values",
+  "description": "Type and enum validation. Cross-field invariants that JSON Schema cannot express (dbcache vs memory limit, grace period vs dbcache, Knots-only options under Core) are enforced as fail guards in templates/_helpers.tpl.",
+  "type": "object",
+  "properties": {
+    "node": {
+      "type": "object",
+      "properties": {
+        "implementation": {
+          "type": "string",
+          "enum": ["knots", "core"]
+        },
+        "network": {
+          "type": "string",
+          "enum": ["main", "test", "signet", "regtest"]
+        },
+        "config": {
+          "type": "object",
+          "description": "Any bitcoind option as key=value.",
+          "properties": {
+            "dbcache": { "type": "integer", "minimum": 4 },
+            "prune": { "type": "integer", "minimum": 0 },
+            "maxconnections": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "configList": {
+          "type": "object",
+          "description": "Options bitcoind accepts more than once.",
+          "additionalProperties": { "type": "array", "items": { "type": ["string", "integer"] } }
+        },
+        "extraConfig": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["implementation", "network", "config"]
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "digest": { "type": "string", "pattern": "^(sha256:[a-f0-9]{64})?$" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "secret": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["generated", "existingSecret", "externalSecret"]
+        }
+      },
+      "required": ["provider"]
+    },
+    "rpc": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "username": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "zmq": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "rawBlockPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "hashBlockPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "size": { "type": "string" },
+        "storageClass": { "type": "string" },
+        "keepOnDelete": { "type": "boolean" },
+        "accessMode": { "type": "string", "enum": ["ReadWriteOnce", "ReadWriteOncePod"] }
+      },
+      "required": ["size"]
+    },
+    "safety": {
+      "type": "object",
+      "properties": {
+        "memoryHeadroom": { "type": "string" },
+        "enforceGracePeriod": { "type": "boolean" },
+        "allowUnpinnedImage": { "type": "boolean" }
+      },
+      "required": ["memoryHeadroom"]
+    },
+    "recovery": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 }
+  },
+  "required": ["node", "images", "resources", "safety", "storage"]
+}

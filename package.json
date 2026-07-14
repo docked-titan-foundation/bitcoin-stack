@@ -1,0 +1,22 @@
+{
+  "name": "bitcoin-stack-chart",
+  "version": "0.0.0",
+  "description": "Hardened Helm chart for a Bitcoin node (Knots or Core) plus a mining pool (public-pool or ckpool)",
+  "private": true,
+  "devDependencies": {
+    "@commitlint/cli": "^21.0.1",
+    "@commitlint/config-conventional": "^21.0.1",
+    "@semantic-release/changelog": "^6.0.0",
+    "@semantic-release/commit-analyzer": "^13.0.0",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.8",
+    "@semantic-release/release-notes-generator": "^14.1.1",
+    "pre-commit": "^2.0.0",
+    "semantic-release": "^25.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/docked-titan-foundation/bitcoin-stack.git"
+  }
+}

@@ -1,0 +1,27 @@
+apiVersion: v2
+name: bitcoin-node
+description: A hardened Bitcoin full node — Bitcoin Knots or Bitcoin Core, selected by a value. One StatefulSet, one PVC, RPC and ZMQ for in-cluster consumers.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - bitcoin
+  - bitcoind
+  - knots
+  - core
+  - blockchain
+home: https://github.com/docked-titan-foundation/bitcoin-stack
+sources:
+  - https://github.com/docked-titan-foundation/bitcoin-stack
+  - https://github.com/bitcoinknots/bitcoin
+  - https://github.com/bitcoin/bitcoin
+maintainers:
+  - name: Docked Titan Foundation
+    url: https://github.com/docked-titan-foundation
+annotations:
+  org.opencontainers.image.title: bitcoin-node
+  org.opencontainers.image.description: Hardened Bitcoin full node (Knots or Core)
+  org.opencontainers.image.source: https://github.com/docked-titan-foundation/bitcoin-stack
+  org.opencontainers.image.licenses: GPL-3.0
+  org.opencontainers.image.vendor: Docked Titan Foundation

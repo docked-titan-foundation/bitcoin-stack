@@ -1,0 +1,193 @@
+{{- include "mining-pool.validate" . -}}
+{{- $isCk := eq .Values.pool.implementation "ckpool" -}}
+{{- $storage := ternary .Values.pool.ckpool.storage .Values.pool.publicPool.storage $isCk -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mining-pool.name" . }}
+  labels:
+    {{- include "mining-pool.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate. The pool holds a ReadWriteOnce volume and
+    # long-lived TCP connections from miners; a second pod could not mount the
+    # volume anyway, and would sit there Pending while the old one kept running.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "mining-pool.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "mining-pool.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ include "mining-pool.name" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if $isCk }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "mining-pool.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $isCk }}
+      initContainers:
+        # ckpool reads no environment variables — the RPC password has to be
+        # inside its JSON config file. Substitute it in here, at startup, from the
+        # Secret, into a file on an emptyDir. That keeps the credential out of the
+        # ConfigMap and out of every rendered manifest.
+        - name: render-config
+          image: {{ include "mining-pool.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              sed "s|__RPC_PASSWORD__|${BITCOIN_RPC_PASSWORD}|" \
+                /config-template/ckpool.conf.template > /config/ckpool.conf
+              chmod 600 /config/ckpool.conf
+          env:
+            - name: BITCOIN_RPC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mining-pool.rpcSecretName" . }}
+                  key: {{ .Values.bitcoin.existingSecret.key }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config-template
+              mountPath: /config-template
+              readOnly: true
+            - name: config
+              mountPath: /config
+      {{- end }}
+      containers:
+        - name: {{ .Values.pool.implementation }}
+          image: {{ include "mining-pool.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          {{- if $isCk }}
+          args:
+            - -c
+            - /config/ckpool.conf
+          {{- else }}
+          env:
+            # public-pool exits at startup if API_PORT is unset. Not optional.
+            - name: API_PORT
+              value: {{ .Values.pool.publicPool.api.port | quote }}
+            - name: API_SECURE
+              value: {{ .Values.pool.publicPool.api.secure | quote }}
+            - name: STRATUM_PORT
+              value: {{ .Values.stratum.port | quote }}
+            - name: STRATUM_MAX_CONNECTIONS_PER_LISTENER
+              value: {{ .Values.stratum.maxConnectionsPerListener | quote }}
+            - name: NETWORK
+              value: {{ .Values.pool.network | quote }}
+            - name: POOL_IDENTIFIER
+              value: {{ .Values.pool.identifier | quote }}
+            - name: DEV_FEE_ADDRESS
+              value: {{ .Values.pool.publicPool.devFeeAddress | quote }}
+            - name: BITCOIN_RPC_URL
+              value: {{ printf "http://%s" (include "mining-pool.rpcHost" .) | quote }}
+            - name: BITCOIN_RPC_PORT
+              value: {{ include "mining-pool.rpcPort" . | quote }}
+            - name: BITCOIN_RPC_USER
+              value: {{ include "mining-pool.rpcUsername" . | quote }}
+            - name: BITCOIN_RPC_TIMEOUT
+              value: {{ .Values.bitcoin.rpc.timeoutMs | quote }}
+            - name: BITCOIN_ZMQ_HOST
+              value: {{ include "mining-pool.zmqHost" . | quote }}
+            - name: BITCOIN_RPC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mining-pool.rpcSecretName" . }}
+                  key: {{ .Values.bitcoin.existingSecret.key }}
+          {{- end }}
+          ports:
+            - name: stratum
+              containerPort: {{ .Values.stratum.port }}
+            {{- if not $isCk }}
+            - name: api
+              containerPort: {{ .Values.pool.publicPool.api.port }}
+            {{- end }}
+          {{- if not $isCk }}
+          livenessProbe:
+            httpGet:
+              path: /api/info
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 4
+          readinessProbe:
+            tcpSocket:
+              port: stratum
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          {{- else }}
+          # ckpool has no HTTP surface at all — the stratum port is the only
+          # signal it is alive.
+          livenessProbe:
+            tcpSocket:
+              port: stratum
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 4
+          readinessProbe:
+            tcpSocket:
+              port: stratum
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          {{- end }}
+          volumeMounts:
+            {{- if $storage.enabled }}
+            - name: data
+              mountPath: {{ if $isCk }}/var/lib/ckpool{{ else }}/public-pool/DB{{ end }}
+            {{- end }}
+            {{- if $isCk }}
+            - name: config
+              mountPath: /config
+              readOnly: true
+            {{- end }}
+            # readOnlyRootFilesystem is on; give the process a scratch dir.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        {{- if $storage.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "mining-pool.name" . }}-data
+        {{- end }}
+        {{- if $isCk }}
+        - name: config-template
+          configMap:
+            name: {{ include "mining-pool.configName" . }}
+        - name: config
+          emptyDir: {}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}

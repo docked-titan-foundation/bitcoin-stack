@@ -1,0 +1,41 @@
+{{ include "mining-pool.name" . }} — {{ .Values.pool.implementation }} on {{ .Values.pool.network }}
+
+  image     {{ include "mining-pool.image" . }}
+  stratum   port {{ .Values.stratum.port }} ({{ .Values.stratum.service.type }})
+  node      {{ .Values.bitcoin.rpc.host }}:{{ .Values.bitcoin.rpc.port }}
+
+Point a miner at it:
+
+  kubectl get svc -n {{ .Release.Namespace }} {{ include "mining-pool.stratum.name" . }}
+
+{{- if eq .Values.stratum.service.type "LoadBalancer" }}
+  # then set the miner's pool URL to  stratum+tcp://<EXTERNAL-IP>:{{ .Values.stratum.port }}
+{{- end }}
+
+  Username = the Bitcoin address you want a found block to pay. That address is
+  set ON THE MINER, not in this chart. Solo mining pays the coinbase straight to
+  it — get it wrong and you mine for someone else.
+
+{{- if eq .Values.pool.implementation "ckpool" }}
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  You are running ckpool from an image this project does not vouch for.       ║
+║                                                                              ║
+║    {{ printf "%-72s" (include "mining-pool.image" .) }}║
+║                                                                              ║
+║  ckpool's upstream ships source only. If you did not build and audit this    ║
+║  image yourself, understand that it constructs the coinbase output of any    ║
+║  block you find — it decides who gets paid.                                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+{{- end }}
+
+{{- if not (eq .Values.pool.network "mainnet") }}
+
+pool.network is "{{ .Values.pool.network }}" — this pool is NOT mining for real
+bitcoin.
+{{- end }}
+
+A pool is only as fresh as its block notifications. This chart wires ZMQ
+({{ include "mining-pool.zmqHost" . }}) so the pool rebuilds the block template the
+instant a new block lands. Without it, miners grind stale work for seconds after
+every block — which is time spent mining a block that can no longer be won.

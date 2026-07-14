@@ -1,0 +1,240 @@
+# Bitcoin node — Knots or Core, as a hardened StatefulSet.
+#
+# A Bitcoin node is a single, heavily-stateful process: one StatefulSet, one big
+# PVC, no replicas, no scaling. That is genuinely all it needs.
+#
+#   bitcoind (StatefulSet, 1 replica)
+#     ├─ P2P  :8333   peers on the Bitcoin network (in + out)
+#     ├─ RPC  :8332   ClusterIP only — NEVER expose this publicly
+#     └─ ZMQ  :28332  block notifications for subscribers (a mining pool)
+#   datadir /home/bitcoin/.bitcoin  ── the PVC (the whole blockchain)
+#
+# Defaults below are a mainnet archival node. See the README for the values to
+# change for a pruned, signet, or regtest node.
+
+# ── Which implementation ───────────────────────────────────────────────────────
+node:
+  # knots | core
+  #
+  # Knots is Core plus extra policy/relay options and a different default policy
+  # stance; Core is the reference implementation. Both speak the same RPC, ship
+  # the same datadir layout, and are interchangeable as far as this chart cares —
+  # only the image and a few Knots-only config options differ.
+  implementation: knots
+
+  # main | test | signet | regtest. Network-scoped options below are emitted into
+  # the matching [section] of bitcoin.conf, which is what bitcoind expects.
+  network: main
+
+  # bitcoin.conf, as data.
+  #
+  # Every key here becomes a `key=value` line. Any bitcoind option works without
+  # touching the chart — that is the point. Options bitcoind expects more than
+  # once (addnode, onlynet, bind…) go in `configList` below instead.
+  #
+  # The two that matter most:
+  #   dbcache        in-memory UTXO cache (MiB). The single biggest lever on
+  #                  initial block download speed. It is also the single easiest
+  #                  way to destroy a node: if bitcoind is OOM-killed it never
+  #                  flushes this cache to disk, and the chainstate is corrupted.
+  #                  The chart REFUSES to install unless
+  #                  resources.limits.memory >= dbcache + safety.memoryHeadroom.
+  #   prune          0 = full archival node (needs the full storage.size below).
+  #                  Otherwise the target size of the pruned block store in MiB
+  #                  (20000 ≈ 20 GB). A pruned node cannot serve historic blocks
+  #                  to peers or rescan old wallet history.
+  config:
+    dbcache: 4096
+    maxconnections: 64
+    listen: 1
+    prune: 0
+
+  # Options bitcoind accepts repeatedly. Each list item becomes its own line.
+  #   addnode: [seed1.example.com, seed2.example.com]
+  #   onlynet: [onion]
+  configList: {}
+
+  # Raw bitcoin.conf lines, appended verbatim. An escape hatch for anything the
+  # two maps above cannot express (section headers, comments).
+  extraConfig: []
+
+# ── Image ──────────────────────────────────────────────────────────────────────
+# Pinned by digest, never by tag alone: a tag is a mutable pointer, a digest is
+# the artifact. The chart refuses to render an unpinned image unless you opt out
+# explicitly (see safety.allowUnpinnedImage).
+#
+# These presets are what `node.implementation` selects between. Renovate keeps
+# the digests current; do not reformat these three lines, its regex matches them.
+images:
+  knots:
+    repository: bitcoinknots/bitcoin
+    tag: "29.3.knots20260508"
+    digest: "sha256:7005235c5728c867abbd85c43e05725c06b451e26c31a40f4955e3f949d54669"
+  core:
+    repository: bitcoin/bitcoin
+    tag: "31.1"
+    digest: "sha256:da25cedc66b1daefff9f412ee196c901a899c3fa68a33b20849c3e08b5c40d63"
+
+# Override the selected preset (e.g. to run your own build). Leave empty to use
+# the preset for node.implementation.
+image:
+  repository: ""
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# ── RPC (JSON-RPC / bitcoin-cli) ───────────────────────────────────────────────
+# Reachable ONLY on the in-cluster ClusterIP Service. Do not expose it publicly:
+# it is plain HTTP and it is a full-control interface to the node.
+rpc:
+  enabled: true
+  username: bitcoin
+  port: 8332
+  # rpcallowip subnet permitted to reach the RPC port. Because the Service is
+  # ClusterIP-only, the broad default just needs to cover the pod network — and
+  # it is only safe for exactly as long as that stays true.
+  allowSubnet: 0.0.0.0/0
+
+# ── ZMQ (block notifications) ──────────────────────────────────────────────────
+# bitcoind pushes new blocks over ZMQ so subscribers hear about them the instant
+# they arrive instead of polling. A mining pool needs this: without it, miners
+# keep grinding stale work for seconds after every new block.
+zmq:
+  enabled: true
+  rawBlockPort: 28332
+  hashBlockPort: 28333
+
+# ── P2P ────────────────────────────────────────────────────────────────────────
+p2p:
+  port: 8333
+  service:
+    # ClusterIP is enough for outbound-only. Switch to LoadBalancer (or NodePort)
+    # and forward the port on your router to accept INBOUND peers, which is how
+    # you give back to the network rather than only taking from it.
+    type: ClusterIP
+    loadBalancerIP: ""
+
+# ── The RPC credential ─────────────────────────────────────────────────────────
+# Three ways to get it, none of which is "write it in values.yaml":
+#
+#   generated       the chart generates a strong password on first install and
+#                   reuses it on every upgrade (it reads back the live Secret, so
+#                   an upgrade does not rotate it and break the pool).
+#   existingSecret  you created the Secret yourself; the chart just reads it.
+#   externalSecret  synced from a real secret manager (OpenBao/Vault) by the
+#                   External Secrets Operator. This is the right answer in prod.
+secret:
+  provider: generated
+
+  existingSecret:
+    name: ""
+    key: rpc-password
+
+  externalSecret:
+    secretStore: openbao
+    storeKind: ClusterSecretStore
+    # Seed it once, before first sync:
+    #   bao kv put secret/bitcoin-stack/node rpc-password=<strong password>
+    secretPath: bitcoin-stack/node
+    property: rpc-password
+    refreshInterval: 1h
+
+# ── Storage ────────────────────────────────────────────────────────────────────
+storage:
+  # A mainnet archival node is ~650-700GB in 2026 and grows ~60GB/year. Give it
+  # real headroom: running out of disk mid-write can corrupt the chainstate, and
+  # this volume cannot be grown by editing this value alone — volumeClaimTemplates
+  # are immutable. See docs/failure-modes.md before you change it.
+  size: 900Gi
+  # Empty = the cluster's default StorageClass.
+  storageClass: ""
+  # Keep the PVC when the release is uninstalled. It holds hundreds of GB that
+  # take weeks to re-download; deleting it should be a deliberate, manual act.
+  keepOnDelete: true
+  accessMode: ReadWriteOnce
+
+# ── Resources ──────────────────────────────────────────────────────────────────
+# bitcoind is I/O-bound, not CPU-bound: during initial block download it is
+# mostly waiting on the disk. Memory is the lever that matters — too little and
+# the kernel evicts page cache the node needs back moments later, turning every
+# eviction into another random read.
+#
+# limits.memory must be >= node.config.dbcache + safety.memoryHeadroom, or the
+# chart refuses to install. This is not a style preference: an OOM kill during a
+# chainstate flush corrupts the datadir.
+resources:
+  requests:
+    cpu: 500m
+    memory: 6Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi
+
+# ── Safety rails ───────────────────────────────────────────────────────────────
+# Each of these exists because of a real way a Bitcoin node gets destroyed.
+# docs/failure-modes.md explains every one. Turning them off is allowed, and is
+# very rarely a good idea.
+safety:
+  # Peak RSS runs above dbcache (block index, mempool, peer buffers). This is the
+  # margin the chart demands between dbcache and limits.memory.
+  memoryHeadroom: 2Gi
+  # bitcoind must flush its dirty UTXO cache on SIGTERM or the datadir needs a
+  # slow reindex. The flush time scales with dbcache, so the chart requires a
+  # grace period that scales with it too.
+  enforceGracePeriod: true
+  # Refuse to render an image that is not pinned by digest.
+  allowUnpinnedImage: false
+
+# The chart computes a minimum from dbcache when safety.enforceGracePeriod is on
+# and fails if this is below it. Raise it, never lower it.
+terminationGracePeriodSeconds: 900
+
+# ── Recovery mode ──────────────────────────────────────────────────────────────
+# Turn this on ONLY when the node needs to reindex or otherwise take a very long
+# time to start.
+#
+# The startup probe gives bitcoind ~10 minutes to open its P2P port. A -reindex
+# takes DAYS. Without this switch the kubelet would kill the node every 10
+# minutes, forever, and it could never finish recovering — each kill making the
+# damage worse. This drops the startup and liveness probes so recovery can run to
+# completion. Turn it back off afterwards.
+recovery:
+  enabled: false
+
+# ── Hardening ──────────────────────────────────────────────────────────────────
+# The official bitcoind images run as uid 101 and keep the datadir at
+# /home/bitcoin/.bitcoin. Both Knots and Core share this layout.
+podSecurityContext:
+  runAsUser: 101
+  runAsGroup: 101
+  runAsNonRoot: true
+  fsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+serviceAccount:
+  create: true
+  name: ""
+  # bitcoind never talks to the Kubernetes API. Do not hand it a token.
+  automountServiceAccountToken: false
+
+# There is only ever one bitcoind, and two of them on one datadir is fatal. The
+# PDB stops a node drain from evicting it without a graceful flush.
+podDisruptionBudget:
+  enabled: true
+
+# The datadir is the only thing bitcoind writes to. Everything else is read-only.
+dataDir: /home/bitcoin/.bitcoin
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}

@@ -1,0 +1,62 @@
+# The values the end-to-end test installs with.
+#
+# regtest is the whole trick: a regtest node has no chain to download, so it is
+# ready in seconds. That turns "does the pool actually talk to the node" from a
+# question you can only answer after a week of mainnet sync into one CI answers
+# on every pull request.
+
+bitcoin-node:
+  node:
+    network: regtest
+    config:
+      dbcache: 64
+      maxconnections: 8
+      listen: 1
+      prune: 0
+
+  storage:
+    size: 1Gi
+    keepOnDelete: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  safety:
+    # The default 2Gi of headroom is sized for a mainnet dbcache. On regtest the
+    # cache is 64 MiB and there is no chainstate worth protecting — it is rebuilt
+    # from nothing in seconds.
+    memoryHeadroom: 256Mi
+    # Likewise: there is nothing to flush, and a 5-minute teardown per CI run is
+    # not a good trade for protecting a chain that does not exist.
+    enforceGracePeriod: false
+
+  terminationGracePeriodSeconds: 30
+
+mining-pool:
+  pool:
+    implementation: public-pool
+    # regtest shares testnet's address parameters.
+    network: testnet
+    identifier: "ci"
+    publicPool:
+      storage:
+        size: 1Gi
+        keepOnDelete: false
+
+  stratum:
+    service:
+      # kind has no load balancer.
+      type: ClusterIP
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi

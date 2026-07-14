@@ -1,0 +1,184 @@
+# Mining pool — public-pool or ckpool, as a hardened Deployment.
+#
+# Miners (Bitaxe, NerdQAxe, an S9…) speak Stratum. bitcoind does not: it only
+# offers `getblocktemplate` over JSON-RPC. The pool is the piece that bridges the
+# two, and it is the piece that builds the coinbase output — the transaction that
+# pays out a block if you find one.
+#
+#   miner ──stratum:3333──> mining-pool ──RPC:8332 + ZMQ:28332──> bitcoin node
+#
+# In solo mining there is no operator cut and no shared payout: the coinbase pays
+# the Bitcoin address the miner authenticates with, which is set on the miner as
+# the stratum username, not here.
+
+pool:
+  # public-pool | ckpool
+  #
+  # public-pool  a NestJS stratum server with a stats API and a SQLite store.
+  #              This is the one the org publishes a hardened, signed, SBOM'd
+  #              image for, and the default.
+  # ckpool       Con Kolivas' C stratum server. Smaller, faster, no database, no
+  #              API. See pool.ckpool below before you choose it — there is no
+  #              image you should trust yet, so you must supply one.
+  implementation: public-pool
+
+  # Shown to miners in the pool's stats. Cosmetic.
+  identifier: "solo"
+
+  # mainnet | testnet.
+  #
+  # This only selects which network's address format the pool decodes miner
+  # usernames with — it does not select the chain. The chain comes from whatever
+  # node you point it at. On a regtest or signet node use `testnet`, which shares
+  # their address parameters. The umbrella chart derives this for you.
+  network: mainnet
+
+  # ── public-pool ─────────────────────────────────────────────────────────────
+  publicPool:
+    api:
+      # public-pool EXITS AT STARTUP if API_PORT is unset. This is not optional.
+      port: 3334
+      secure: false
+      # ClusterIP only. This is the JSON stats API the (separate) web UI reads —
+      # it is not the miner-facing port, and there is no reason to expose it.
+      service:
+        type: ClusterIP
+
+    # A dev-fee address diverts a share of a found block to someone else. Empty
+    # means every satoshi of a found block goes to the miner. Think hard before
+    # putting an address here, and be sure it is yours.
+    devFeeAddress: ""
+
+    # SQLite share + client-statistics store. No external database server.
+    storage:
+      enabled: true
+      size: 5Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+      keepOnDelete: false
+
+  # ── ckpool ──────────────────────────────────────────────────────────────────
+  ckpool:
+    # ckpool's upstream (Con Kolivas) publishes SOURCE ONLY — there is no official
+    # container image. Every ckpool image on Docker Hub is an unaudited personal
+    # build by an anonymous account.
+    #
+    # This chart therefore ships NO DEFAULT IMAGE for ckpool. You must name one
+    # explicitly, and pin it by digest. Understand what you are doing: this
+    # process constructs the coinbase output that pays out a found block. An
+    # image you did not audit can quietly pay it to someone else.
+    #
+    # A hardened, signed, SBOM-attested ckpool image is on the roadmap for
+    # docked-titan-foundation, exactly as was done for public-pool. Until it
+    # exists, prefer public-pool.
+    image:
+      repository: ""
+      tag: ""
+      digest: ""
+
+    # ckpool.conf, as data — rendered to JSON verbatim. Any ckpool option works
+    # without touching the chart. `btcd`, `serverurl` and `zmqblock` are filled in
+    # from the bitcoin.* values below; anything you set here is merged over them.
+    config:
+      mindiff: 1
+      startdiff: 1000
+      maxdiff: 0
+      # Appears in the coinbase of any block this pool finds.
+      btcsig: "/bitcoin-stack/"
+
+    # ckpool writes logs and its own state here.
+    storage:
+      enabled: true
+      size: 1Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+      keepOnDelete: false
+
+# ── Stratum (the port miners connect to) ───────────────────────────────────────
+# Stratum is raw TCP, not HTTP, so it cannot be served through an HTTP Ingress —
+# it needs its own address. LoadBalancer is the usual answer on a homelab (MetalLB
+# assigns the IP); NodePort works too.
+stratum:
+  port: 3333
+  maxConnectionsPerListener: 1000
+  service:
+    type: LoadBalancer
+    loadBalancerIP: ""
+    # Keeps the miner's source IP visible to the pool rather than showing every
+    # miner as coming from a node IP.
+    externalTrafficPolicy: Local
+    annotations: {}
+
+# ── Image (public-pool) ────────────────────────────────────────────────────────
+# Pinned by digest. Do not reformat these three lines — Renovate's regex matches
+# them.
+image:
+  repository: ghcr.io/docked-titan-foundation/public-pool
+  tag: "latest"
+  digest: "sha256:af2cbc7d95d4fa7021fd936067296198311f7839b56f5b015718d50e45bd6c2b"
+  pullPolicy: IfNotPresent
+
+# ── The Bitcoin node to mine on ────────────────────────────────────────────────
+# The umbrella chart fills all of this in from the node subchart, so you never
+# write it twice. Set it by hand only when running this chart standalone against
+# a node that lives somewhere else.
+bitcoin:
+  rpc:
+    # Empty + umbrella = derived. Empty + standalone = the chart refuses to render.
+    host: ""
+    port: 8332
+    username: bitcoin
+    timeoutMs: 10000
+  zmq:
+    host: ""
+    rawBlockPort: 28332
+
+  # Where the RPC password comes from. With the umbrella this is the node's own
+  # Secret, so there is exactly one copy of the credential in the cluster.
+  existingSecret:
+    name: ""
+    key: rpc-password
+
+# ── Resources ──────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+# ── Safety rails ───────────────────────────────────────────────────────────────
+safety:
+  # Refuse to render an image that is not pinned by digest.
+  allowUnpinnedImage: false
+
+# ── Hardening ──────────────────────────────────────────────────────────────────
+# The public-pool image runs as uid 1000 (the `node` user).
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+serviceAccount:
+  create: true
+  name: ""
+  automountServiceAccountToken: false
+
+terminationGracePeriodSeconds: 60
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}

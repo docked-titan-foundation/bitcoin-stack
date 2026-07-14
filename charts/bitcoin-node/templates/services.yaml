@@ -1,0 +1,49 @@
+{{- if or .Values.rpc.enabled .Values.zmq.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bitcoin-node.rpc.name" . }}
+  labels:
+    {{- include "bitcoin-node.labels" . | nindent 4 }}
+spec:
+  # ClusterIP, always. RPC is plain HTTP and it is total control over the node:
+  # it must never be reachable from outside the cluster. If you find yourself
+  # wanting an Ingress here, you want an authenticated proxy instead.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "bitcoin-node.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    {{- if .Values.rpc.enabled }}
+    - name: rpc
+      port: {{ include "bitcoin-node.rpcPort" . }}
+      targetPort: rpc
+    {{- end }}
+    {{- if .Values.zmq.enabled }}
+    - name: zmq-rawblock
+      port: {{ include "bitcoin-node.zmqRawBlockPort" . }}
+      targetPort: zmq-rawblock
+    - name: zmq-hashblock
+      port: {{ .Values.zmq.hashBlockPort }}
+      targetPort: zmq-hashblock
+    {{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bitcoin-node.p2p.name" . }}
+  labels:
+    {{- include "bitcoin-node.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.p2p.service.type }}
+  {{- if and (eq .Values.p2p.service.type "LoadBalancer") .Values.p2p.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.p2p.service.loadBalancerIP }}
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: {{ include "bitcoin-node.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: p2p
+      port: {{ .Values.p2p.port }}
+      targetPort: p2p

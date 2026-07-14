@@ -1,0 +1,31 @@
+{{- if eq .Values.pool.implementation "ckpool" }}
+{{- /*
+ckpool.conf, rendered from pool.ckpool.config as data — any ckpool option works
+without touching the chart.
+
+The RPC password is NOT in here. ckpool reads no environment variables: the
+credential has to be inside the JSON file. So this ConfigMap holds a template
+with a __RPC_PASSWORD__ placeholder, and an init container substitutes the real
+password from the Secret into a file on an emptyDir at startup. The password
+therefore never lands in a ConfigMap, in git, or in a rendered manifest.
+*/}}
+{{- $derived := dict
+      "btcd" (list (dict
+        "url" (printf "%s:%v" (include "mining-pool.rpcHost" .) (include "mining-pool.rpcPort" .))
+        "auth" (include "mining-pool.rpcUsername" .)
+        "pass" "__RPC_PASSWORD__"
+        "notify" true))
+      "serverurl" (list (printf "0.0.0.0:%v" .Values.stratum.port))
+      "logdir" "/var/lib/ckpool/logs"
+-}}
+{{- $config := mergeOverwrite $derived (deepCopy .Values.pool.ckpool.config) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mining-pool.configName" . }}
+  labels:
+    {{- include "mining-pool.labels" . | nindent 4 }}
+data:
+  ckpool.conf.template: |
+    {{- $config | toPrettyJson | nindent 4 }}
+{{- end }}

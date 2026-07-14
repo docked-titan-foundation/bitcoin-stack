@@ -1,0 +1,44 @@
+{{- $node := index .Values "bitcoin-node" -}}
+{{- $pool := index .Values "mining-pool" -}}
+bitcoin-stack {{ .Chart.Version }} installed as "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+{{ if $node.enabled }}  node   Bitcoin {{ $node.node.implementation }} on {{ $node.node.network }}, {{ $node.storage.size }} datadir, dbcache {{ $node.node.config.dbcache }} MiB
+{{- else }}  node   not installed — the pool is mining on an external node
+{{- end }}
+{{- if $pool.enabled }}
+  pool   {{ $pool.pool.implementation }}, stratum on port {{ $pool.stratum.port }} ({{ $pool.stratum.service.type }})
+{{- else }}
+  pool   not installed
+{{- end }}
+
+{{- if and $node.enabled (eq $node.node.network "main") }}
+
+The node must download and verify the entire chain before the pool can mine
+anything real. That takes days and it is disk-bound, not CPU-bound. Follow it:
+
+  kubectl logs -n {{ .Release.Namespace }} sts/bitcoin-node -f | grep progress=
+
+The pool will start immediately and will happily accept miners, but until the
+node is synced it is building templates on top of an old chain tip. Any block it
+"finds" in that state is worthless. Wait for the sync.
+{{- end }}
+
+{{- if $pool.enabled }}
+
+Point your miners at:
+
+  kubectl get svc -n {{ .Release.Namespace }} mining-pool-stratum
+
+  The miner's stratum USERNAME must be the Bitcoin address you want a found block
+  to pay out to. That is configured on the miner, not here. Solo mining sends the
+  coinbase straight to it — an address typo means you mine for nobody.
+{{- end }}
+
+Before you touch this release again, read:
+
+  https://github.com/docked-titan-foundation/bitcoin-stack/blob/main/docs/failure-modes.md
+
+The short version: never `kubectl delete pod --force` the node, and never change
+storage.size or storage.storageClass by editing values — those live in the
+StatefulSet's volumeClaimTemplates, which Kubernetes will not let you update, and
+a rejected apply silently freezes every later change to this release.

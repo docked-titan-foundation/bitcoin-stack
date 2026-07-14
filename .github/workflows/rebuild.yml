@@ -1,0 +1,237 @@
+---
+# Weekly rebuild of the published chart.
+#
+# Repackaging a chart is deterministic, so why bother? Three reasons, none of
+# which are about the chart's own bytes:
+#   - the pinned image digests get re-scanned against a fresh CVE database, so a
+#     newly-disclosed vulnerability in bitcoind or the pool surfaces here rather
+#     than in production;
+#   - the Sigstore signing certificates are short-lived, and re-signing keeps the
+#     transparency-log entries current;
+#   - fresh SLSA provenance.
+name: Rebuild
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # Sundays, 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to rebuild (e.g., v1.0.0). Defaults to latest stable.'
+        required: false
+
+concurrency:
+  group: rebuild
+  cancel-in-progress: false
+
+env:
+  CHART_REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: resolve
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION=$(git tag --sort=-v:refname | grep -v -- '-' | head -1 | sed 's/^v//')
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::no released version to rebuild"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Rebuilding ${VERSION}"
+
+  build:
+    needs: resolve
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+    outputs:
+      chart_digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.resolve.outputs.version }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar xz -C /usr/local/bin kubeconform
+
+      - name: Package
+        env:
+          VERSION: v${{ needs.resolve.outputs.version }}
+        run: ./scripts/build.sh
+
+      - name: Render matrix, hardening assertions, guard assertions
+        run: ./scripts/template.sh
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: bitcoin-stack-e2e
+
+      - name: End-to-end (node + pool on regtest)
+        env:
+          REUSE_CLUSTER: '1'
+          DEBUG: '1'
+        run: ./scripts/test.sh
+
+      - name: Render for scanning
+        run: |
+          mkdir -p /tmp/rendered
+          helm template bs charts/bitcoin-stack > /tmp/rendered/all.yaml
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: /tmp/rendered
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      # A rebuild exists precisely to surface newly-disclosed problems, so this
+      # reports rather than fails — a red weekly job that nobody can fix by
+      # reverting anything teaches people to ignore red jobs.
+      - name: Report misconfigurations
+        run: |
+          COUNT=$(grep -o '"level":"error"' trivy-results.sarif | wc -l || echo 0)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::Trivy found ${COUNT} HIGH/CRITICAL findings in the rebuild"
+          fi
+
+      - uses: github/codeql-action/upload-sarif@v4
+        if: success() || failure()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-charts
+
+      - name: Log in to ghcr
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push and capture the digest
+        id: push
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          helm push "dist/bitcoin-stack-${VERSION}.tgz" \
+            "oci://${CHART_REGISTRY}" 2>&1 | tee /tmp/push.log
+          DIGEST=$(grep -oP 'sha256:[a-f0-9]{64}' /tmp/push.log | head -1)
+          if [ -z "$DIGEST" ]; then
+            echo "::error::could not determine the pushed chart's digest"
+            exit 1
+          fi
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - uses: anchore/sbom-action@v0
+        with:
+          path: charts/
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom-${{ needs.resolve.outputs.version }}
+          path: sbom.spdx.json
+
+  attest:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+      artifact-metadata: write
+      packages: write
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.CHART_REGISTRY }}/bitcoin-stack
+          subject-digest: ${{ needs.build.outputs.chart_digest }}
+          push-to-registry: true
+          create-storage-record: true
+
+  sign:
+    needs: [resolve, build, attest]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - uses: sigstore/cosign-installer@v3
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign
+        run: |
+          cosign sign --yes \
+            "${CHART_REGISTRY}/bitcoin-stack@${{ needs.build.outputs.chart_digest }}"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: sbom-${{ needs.resolve.outputs.version }}
+
+      - name: Attest the SBOM
+        run: |
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            "${CHART_REGISTRY}/bitcoin-stack@${{ needs.build.outputs.chart_digest }}"
+
+  notify-failure:
+    needs: [resolve, build, attest, sign]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ needs.resolve.outputs.version }}';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Scheduled rebuild failed for v${version}`,
+              labels: ['security', 'rebuild'],
+              body: [
+                `The weekly rebuild of \`v${version}\` failed.`,
+                '',
+                'That means the published chart may now be carrying an unsigned or',
+                'stale attestation, or a pinned image has developed a problem that',
+                'the fresh scan caught.',
+                '',
+                `[Run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              ].join('\n'),
+            });

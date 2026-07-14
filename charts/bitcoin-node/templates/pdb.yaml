@@ -1,0 +1,18 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "bitcoin-node.name" . }}
+  labels:
+    {{- include "bitcoin-node.labels" . | nindent 4 }}
+spec:
+  # There is exactly one bitcoind and it must never be evicted without a graceful
+  # shutdown. minAvailable: 1 on a single replica means a voluntary disruption
+  # (a node drain) has to wait for the pod to be rescheduled rather than simply
+  # taking it out — which is what gives the chainstate flush time to complete.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "bitcoin-node.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

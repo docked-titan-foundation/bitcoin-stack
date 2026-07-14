@@ -1,0 +1,68 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:base"],
+  "baseBranches": ["beta"],
+  "labels": ["dependencies"],
+  "reviewers": ["albertoig"],
+  "assignees": ["albertoig"],
+  "prConcurrentLimit": 10,
+  "minimumReleaseAge": "3 days",
+  "schedule": ["after 9am and before 5pm on weekdays"],
+  "semanticCommits": "enabled",
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "dependencies",
+      "addLabels": ["github-actions"]
+    },
+    {
+      "matchManagers": ["npm"],
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "dependencies",
+      "addLabels": ["npm"]
+    },
+    {
+      "description": "A bitcoind bump changes consensus-relevant code. Never auto-merged, and a rollback across a major version is not possible without a reindex — see docs/failure-modes.md.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["bitcoinknots/bitcoin", "bitcoin/bitcoin"],
+      "semanticCommitType": "feat",
+      "semanticCommitScope": "node",
+      "addLabels": ["upstream", "review-required"],
+      "automerge": false,
+      "minimumReleaseAge": "7 days",
+      "commitBody": "Bitcoin node image bump. Review before merging: this is consensus-critical code, and downgrading across a major version requires a reindex."
+    },
+    {
+      "description": "The pool builds the coinbase output that pays out a found block. Never auto-merged.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["docked-titan-foundation/public-pool"],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "pool",
+      "addLabels": ["upstream", "review-required"],
+      "automerge": false,
+      "minimumReleaseAge": "7 days"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Node images are pinned by digest in values.yaml — tags alone are not a supply-chain guarantee.",
+      "customType": "regex",
+      "fileMatch": ["^charts/bitcoin-node/values\\.yaml$"],
+      "matchStrings": [
+        "repository:\\s+(?<depName>bitcoinknots/bitcoin|bitcoin/bitcoin)\\s+tag:\\s+\"(?<currentValue>[^\"]+)\"\\s+digest:\\s+\"(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "The pool image, likewise pinned by digest.",
+      "customType": "regex",
+      "fileMatch": ["^charts/mining-pool/values\\.yaml$"],
+      "matchStrings": [
+        "repository:\\s+ghcr\\.io/(?<depName>docked-titan-foundation/public-pool)\\s+tag:\\s+\"(?<currentValue>[^\"]+)\"\\s+digest:\\s+\"(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "registryUrlTemplate": "https://ghcr.io",
+      "datasourceTemplate": "docker"
+    }
+  ]
+}

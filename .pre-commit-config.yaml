@@ -1,0 +1,61 @@
+---
+repos:
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+        args: ["--ignore", "CHANGELOG.md"]
+
+  - repo: local
+    hooks:
+      - id: commitlint
+        name: commitlint
+        entry: mise
+        args:
+          - run
+          - commitlint
+        language: system
+        stages: [commit-msg]
+        pass_filenames: true
+      - id: chart-lint
+        name: Lint charts
+        entry: mise
+        args:
+          - run
+          - lint:chart
+        language: system
+        stages: [pre-commit]
+        files: ^charts/
+        pass_filenames: false
+      - id: chart-template
+        name: Render the values matrix through kubeconform
+        entry: mise
+        args:
+          - run
+          - template
+        language: system
+        stages: [pre-commit]
+        files: ^charts/
+        pass_filenames: false
+      - id: chart-unittest
+        name: helm unittest
+        entry: mise
+        args:
+          - run
+          - test:unit
+        language: system
+        stages: [pre-commit]
+        files: ^(charts/|tests/unit/)
+        pass_filenames: false
+      - id: release-config-validate
+        name: Validate semantic release configuration
+        entry: ./scripts/validate-release-config.sh
+        language: system
+        stages: [pre-commit]
+        files: ^(\.releaserc|scripts/update-versions\.sh|README\.md|\.mise\.toml|scripts/validate-release-config\.sh)$
+        pass_filenames: false
