@@ -8,6 +8,7 @@ rules:
     allow-non-breakable-words: true
   comments:
     min-spaces-from-content: 1
+  document-start: disable
   truthy:
     # GitHub Actions' `on:` key.
     check-keys: false

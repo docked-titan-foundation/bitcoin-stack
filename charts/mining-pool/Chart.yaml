@@ -1,6 +1,6 @@
 apiVersion: v2
 name: mining-pool
-description: A hardened Bitcoin mining pool — public-pool or ckpool, selected by a value. Bridges Stratum-speaking miners to a bitcoind that only speaks getblocktemplate.
+description: A hardened Bitcoin mining pool (public-pool or ckpool). Bridges Stratum miners to bitcoind.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

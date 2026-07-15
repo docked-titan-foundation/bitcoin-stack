@@ -1,6 +1,6 @@
 apiVersion: v2
 name: bitcoin-stack
-description: A hardened Bitcoin node (Knots or Core) and mining pool (public-pool or ckpool), wired together and installable in one command.
+description: A hardened Bitcoin node (Knots or Core) plus mining pool (public-pool or ckpool), in one command.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

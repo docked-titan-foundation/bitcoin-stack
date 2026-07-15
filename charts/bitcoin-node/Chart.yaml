@@ -1,6 +1,6 @@
 apiVersion: v2
 name: bitcoin-node
-description: A hardened Bitcoin full node — Bitcoin Knots or Bitcoin Core, selected by a value. One StatefulSet, one PVC, RPC and ZMQ for in-cluster consumers.
+description: A hardened Bitcoin full node (Knots or Core). One StatefulSet, one PVC, in-cluster RPC and ZMQ.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
