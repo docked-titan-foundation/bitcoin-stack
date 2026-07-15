@@ -60,31 +60,38 @@ pool:
   # ── ckpool ──────────────────────────────────────────────────────────────────
   ckpool:
     # ckpool's upstream (Con Kolivas) publishes SOURCE ONLY — there is no official
-    # container image. Every ckpool image on Docker Hub is an unaudited personal
-    # build by an anonymous account.
+    # container image, and every ckpool image on Docker Hub is an unaudited
+    # personal build by an anonymous account. Since this process constructs the
+    # coinbase output that pays out a found block, that is not a build to guess at.
     #
-    # This chart therefore ships NO DEFAULT IMAGE for ckpool. You must name one
-    # explicitly, and pin it by digest. Understand what you are doing: this
-    # process constructs the coinbase output that pays out a found block. An
-    # image you did not audit can quietly pay it to someone else.
+    # So this defaults to docked-titan-foundation's own hardened ckpool image:
+    # built from a pinned upstream commit, non-root, cosign-signed, SBOM-attested,
+    # exactly as the public-pool image is. Override it if you build your own.
     #
-    # A hardened, signed, SBOM-attested ckpool image is on the roadmap for
-    # docked-titan-foundation, exactly as was done for public-pool. Until it
-    # exists, prefer public-pool.
+    # Do not reformat these three lines — Renovate's regex matches them.
     image:
-      repository: ""
-      tag: ""
+      repository: ghcr.io/docked-titan-foundation/ckpool
+      tag: "v1"
+      # Filled in when the image is first published; until then the digest guard
+      # requires you to set it (or set safety.allowUnpinnedImage=true). See the
+      # ckpool image repo: github.com/docked-titan-foundation/ckpool
       digest: ""
 
     # ckpool.conf, as data — rendered to JSON verbatim. Any ckpool option works
-    # without touching the chart. `btcd`, `serverurl` and `zmqblock` are filled in
-    # from the bitcoin.* values below; anything you set here is merged over them.
+    # without touching the chart. `btcd`, `serverurl`, `zmqblock` and solo mode
+    # are filled in from the bitcoin.* values; anything you set here merges over
+    # them.
     config:
       mindiff: 1
       startdiff: 1000
       maxdiff: 0
       # Appears in the coinbase of any block this pool finds.
       btcsig: "/bitcoin-stack/"
+      # Share of a solved block donated to ckpool's author. 0 = none. Upstream
+      # suggests 0.5; this chart never sets it for you — a found block is yours
+      # unless you choose otherwise here. ckpool is excellent software; if you run
+      # it long-term, consider supporting the author.
+      donation: 0
 
     # ckpool writes logs and its own state here.
     storage:

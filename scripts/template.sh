@@ -81,9 +81,7 @@ check "core  + public-pool"                validate --set bitcoin-node.node.impl
 check "knots, pruned"                      validate --set bitcoin-node.node.config.prune=20000 --set bitcoin-node.storage.size=60Gi
 check "knots, signet"                      validate --set bitcoin-node.node.network=signet --set mining-pool.pool.network=testnet
 check "node only, no pool"                 validate --set mining-pool.enabled=false
-check "ckpool (image supplied)"            validate --set mining-pool.pool.implementation=ckpool \
-                                             --set mining-pool.pool.ckpool.image.repository=example/ckpool \
-                                             --set mining-pool.pool.ckpool.image.tag=v1 \
+check "ckpool (org image, digest pinned)"  validate --set mining-pool.pool.implementation=ckpool \
                                              --set mining-pool.pool.ckpool.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 hr
@@ -111,8 +109,8 @@ check_guard "a Knots-only option under Core is refused" \
   "is a Bitcoin Knots option" \
   render --set bitcoin-node.node.implementation=core --set bitcoin-node.node.config.consensusrules=rdts
 
-check_guard "ckpool without an explicit image is refused" \
-  "no default image" \
+check_guard "ckpool with an unpinned image is refused" \
+  "not pinned by digest" \
   render --set mining-pool.pool.implementation=ckpool
 
 check_guard "a pool on the wrong network is refused" \

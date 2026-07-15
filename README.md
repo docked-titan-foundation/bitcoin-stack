@@ -37,7 +37,7 @@ This one refuses to install configurations that will do that.
 | Shutdown | default 30s grace | grace period is **validated against dbcache** — a flush that gets SIGKILLed is a reindex |
 | Reindex | the startup probe kills it every 10 minutes, forever | `recovery.enabled` drops the probes so recovery can finish |
 | Images | `:latest`, or a tag | **digest-pinned**, and it will not render otherwise |
-| ckpool | pulls a random Docker Hub image | **refuses to**, and tells you why |
+| ckpool | pulls a random Docker Hub image | defaults to the org's **hardened, signed** ckpool build, and refuses an unpinned one |
 | RPC credential | in `values.yaml` | generated, or from a Secret, or from Vault/OpenBao — never authored by you |
 | Node ↔ pool wiring | typed twice, drifts | **derived once**; change the RPC port in one place and both halves follow |
 

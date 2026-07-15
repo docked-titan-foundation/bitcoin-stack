@@ -18,15 +18,15 @@ Point a miner at it:
 
 {{- if eq .Values.pool.implementation "ckpool" }}
 
-╔══════════════════════════════════════════════════════════════════════════════╗
-║  You are running ckpool from an image this project does not vouch for.       ║
-║                                                                              ║
-║    {{ printf "%-72s" (include "mining-pool.image" .) }}║
-║                                                                              ║
-║  ckpool's upstream ships source only. If you did not build and audit this    ║
-║  image yourself, understand that it constructs the coinbase output of any    ║
-║  block you find — it decides who gets paid.                                  ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+  Running ckpool in solo mode from:
+    {{ include "mining-pool.image" . }}
+{{- if not (hasPrefix "ghcr.io/docked-titan-foundation/" (include "mining-pool.image" .)) }}
+
+  NOTE: that is not the docked-titan-foundation image. ckpool's upstream ships
+  source only, so if you built this yourself, good — but a random Docker Hub
+  ckpool image is an unaudited build, and this process decides who a found block
+  pays. Prefer the org image, or one you built.
+{{- end }}
 {{- end }}
 
 {{- if not (eq .Values.pool.network "mainnet") }}

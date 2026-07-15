@@ -111,15 +111,17 @@ Guards.
 
 {{- if eq $impl "ckpool" -}}
 {{- if not .Values.pool.ckpool.image.repository -}}
-{{- fail "\n\nckpool has no default image, on purpose.\n\nckpool's upstream publishes source only — there is no official container image,\nand every ckpool image on Docker Hub is an unaudited personal build by an\nanonymous account. This process constructs the coinbase output that pays out a\nfound block: an image you have not audited can quietly pay it to someone else.\n\nSet pool.ckpool.image.repository/tag/digest to an image YOU trust, or use\npool.implementation=public-pool, which has a hardened, signed, SBOM-attested\nbuild published by docked-titan-foundation.\n" -}}
+{{- fail "\n\npool.ckpool.image.repository is empty.\n\nThe default is docked-titan-foundation's own hardened ckpool image. If you have\ncleared it, set an image you trust — but not a random Docker Hub build: this\nprocess constructs the coinbase output that pays out a found block, and every\nunofficial ckpool image is an unaudited personal build.\n" -}}
 {{- end -}}
 {{- end -}}
 
-{{/* Supply chain: no unpinned images. */}}
+{{/* Supply chain: no unpinned images. This is the guard that matters for ckpool
+     now that it has a default repository — the image still must be pinned. */}}
 {{- if not .Values.safety.allowUnpinnedImage -}}
 {{- $digest := ternary .Values.pool.ckpool.image.digest .Values.image.digest (eq $impl "ckpool") -}}
 {{- if not $digest -}}
-{{- fail (printf "\n\nThe %s image is not pinned by digest.\nA tag is a mutable pointer, and this process builds the transaction that pays out\na found block.\nPin it, or set safety.allowUnpinnedImage=true to accept the risk deliberately.\n" $impl) -}}
+{{- $hint := ternary "\nThe docked-titan-foundation ckpool image's digest is pinned once it is first\npublished; until then set pool.ckpool.image.digest, or use public-pool." "" (eq $impl "ckpool") -}}
+{{- fail (printf "\n\nThe %s image is not pinned by digest.\nA tag is a mutable pointer, and this process builds the transaction that pays out\na found block.\nPin it, or set safety.allowUnpinnedImage=true to accept the risk deliberately.%s\n" $impl $hint) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

@@ -168,11 +168,12 @@ gets paid. An image you did not audit can quietly change that address.
 - Every image is pinned **by digest**, never by tag alone. A tag is a mutable
   pointer; a digest is the artifact. The chart will not render an unpinned image
   unless you set `safety.allowUnpinnedImage: true` deliberately.
-- **ckpool ships with no default image, on purpose.** ckpool's upstream publishes
-  source only; every ckpool image on Docker Hub is an unaudited personal build by
-  an anonymous account. You must name one explicitly, and the chart tells you
-  exactly what you are taking on. A hardened, signed, SBOM-attested ckpool image
-  is on the roadmap — until then, prefer public-pool.
+- **ckpool defaults to docked-titan-foundation's own hardened image**, built the
+  same way as public-pool: from a pinned upstream commit, non-root, cosign-signed,
+  SBOM-attested. This exists because ckpool's upstream publishes source only and
+  every ckpool image on Docker Hub is an unaudited personal build by an anonymous
+  account — and this is the process that decides who a found block pays. If you
+  replace the default, the digest guard still applies: no unpinned image runs.
 
 ## 12. Hard power loss — **[you must guard this]**
 

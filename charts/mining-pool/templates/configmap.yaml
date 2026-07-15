@@ -16,6 +16,7 @@ therefore never lands in a ConfigMap, in git, or in a rendered manifest.
         "pass" "__RPC_PASSWORD__"
         "notify" true))
       "serverurl" (list (printf "0.0.0.0:%v" .Values.stratum.port))
+      "zmqblock" (include "mining-pool.zmqHost" .)
       "logdir" "/var/lib/ckpool/logs"
 -}}
 {{- $config := mergeOverwrite $derived (deepCopy .Values.pool.ckpool.config) -}}

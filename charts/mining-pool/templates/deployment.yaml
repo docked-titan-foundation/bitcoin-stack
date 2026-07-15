@@ -90,7 +90,13 @@ spec:
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           {{- if $isCk }}
+          # -B is solo mode: each miner mines to the Bitcoin address it sends as
+          # its stratum username. -s puts the unix sockets on the writable tmp
+          # mount (readOnlyRootFilesystem is on).
           args:
+            - -B
+            - -s
+            - /tmp/ckpool
             - -c
             - /config/ckpool.conf
           {{- else }}
