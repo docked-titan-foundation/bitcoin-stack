@@ -122,14 +122,83 @@ helm upgrade ...
 adopts them. The chart prints this procedure in `NOTES.txt` on every install, so
 it is in front of you *before* you need it.
 
-## 7. Two bitcoinds on one datadir — **[chart guards this]**
+## 7. Slow or remote storage — the sync that never finishes — **[you must guard this]**
+
+Nothing is corrupted here. The node just never catches up — and for that whole
+time the pool has no chain to build on, which is the same outcome as a dead node,
+only quieter, and with no error anywhere to point at.
+
+Initial block download is **random-I/O bound**: hundreds of gigabytes of small,
+scattered reads and writes against the UTXO database. The disk underneath it is
+the single biggest *hardware* lever on how long that takes, and the default choice
+is usually the wrong one.
+
+**Replicated or network-attached storage — Longhorn, Ceph, NFS, cloud block
+volumes — can turn a roughly one-day sync into weeks.** Every cache-missed read
+becomes a network round trip, and the per-operation latency that is invisible
+under a web app is ruinous under IBD.
+
+Two traps make it worse:
+
+- **The data-locality trap.** Distributed storage can place the volume's replica
+  on a *different node* than the pod. Then *every* read that misses page cache
+  crosses the network — a node whose data lives one hop away syncs an order of
+  magnitude slower than the same node reading its local disk, with nothing in any
+  dashboard to explain the difference. (Longhorn's `dataLocality: disabled` does
+  exactly this.)
+- **Page-cache thrash.** The kernel hides a slow disk behind page cache — right up
+  until memory is too tight to hold it. Then it evicts the cache it needed back
+  moments later and every eviction becomes another slow read (see #1). A too-low
+  `limits.memory` and slow storage compound into something far worse than either
+  alone.
+
+**The fix is to give the datadir fast, node-local disk.** A Bitcoin node is a
+single, fully re-syncable dataset with no irreplaceable data (no wallet) — the
+durability a replicated volume sells you is durability you do not need, paid for
+in sync speed you do. Prefer local NVMe: a `local-path` provisioner, or a `local`
+PersistentVolume.
+
+```yaml
+bitcoin-node:
+  storage:
+    storageClass: local-path   # node-local disk, not a replicated volume
+  # Pin the pod to the node that holds that disk, so it schedules where its data
+  # is rather than wherever the scheduler feels like.
+  nodeSelector:
+    kubernetes.io/hostname: your-fast-node
+```
+
+If you are stuck with distributed storage, at least keep the data node-local
+(co-locate the pod with a replica — e.g. Longhorn `dataLocality: best-effort`
+plus a matching `nodeSelector`) and give memory real headroom so page cache
+survives.
+
+The trade-off of node-local storage is honest: the datadir is bound to that one
+node and is not replicated or snapshotted, so recovery is a resync. For public
+chain data with no wallet, that is the right trade.
+
+To tell which of these is actually biting — read the numbers, not the dashboard:
+
+```bash
+# Is the disk the bottleneck? high %util + high await = yes. (Run on the node,
+# or a debug pod with the host mounted; the minimal image has no iostat.)
+iostat -x 2 3
+# Rule CPU out — bitcoind is not CPU-bound. nr_throttled should stay ~0.
+kubectl exec <pod> -- cat /sys/fs/cgroup/cpu.stat
+# Is memory pressure evicting page cache? the max/high counters climb under it.
+kubectl exec <pod> -- cat /sys/fs/cgroup/memory.events
+# Locality: is the pod even on the same node as its volume's replica?
+kubectl get pod <pod> -o jsonpath='{.spec.nodeName}'   # vs where the PV lives
+```
+
+## 8. Two bitcoinds on one datadir — **[chart guards this]**
 
 Fatal to a datadir. Prevented three ways: `replicas: 1` is not configurable,
 `podManagementPolicy: OrderedReady`, and a `ReadWriteOnce` volume. bitcoind's own
 `.lock` file is the last line of defence. Do not hand-run a second pod against the
 same PVC "just to check something".
 
-## 8. Deleting the release and taking the chain with it — **[chart guards this]**
+## 9. Deleting the release and taking the chain with it — **[chart guards this]**
 
 The PVC carries `helm.sh/resource-policy: keep` (`storage.keepOnDelete`), so
 `helm uninstall` will not delete hundreds of gigabytes that take weeks to
@@ -138,7 +207,7 @@ re-download. Deleting the chain should be a deliberate, manual act.
 The RPC Secret is kept for the same reason: silently rotating or losing it breaks
 every consumer of the node, with an error that looks nothing like the cause.
 
-## 9. Config changes that silently trigger a reindex — **[you must guard this]**
+## 10. Config changes that silently trigger a reindex — **[you must guard this]**
 
 Some `bitcoin.conf` changes make bitcoind reprocess the whole chain on next start
 — and because any values change rolls the pod, you find out afterwards:
@@ -153,14 +222,14 @@ Some `bitcoin.conf` changes make bitcoind reprocess the whole chain on next star
 Forward upgrades are safe and are the normal path. This is why Renovate is
 configured never to auto-merge a node image bump.
 
-## 10. A Knots-only option under Core — **[chart guards this]**
+## 11. A Knots-only option under Core — **[chart guards this]**
 
 bitcoind **exits on an unknown config option**. Switch `node.implementation` to
 `core` while a Knots-only option like `consensusrules` is still set, and you get a
 crash loop — on a node that was healthy an hour ago. The chart refuses to render
 that combination and names the offending option.
 
-## 11. Running an image nobody can identify — **[chart guards this]**
+## 12. Running an image nobody can identify — **[chart guards this]**
 
 The pool builds the coinbase output that pays out a found block. It decides who
 gets paid. An image you did not audit can quietly change that address.
@@ -175,7 +244,7 @@ gets paid. An image you did not audit can quietly change that address.
   account — and this is the process that decides who a found block pays. If you
   replace the default, the digest guard still applies: no unpinned image runs.
 
-## 12. Hard power loss — **[you must guard this]**
+## 13. Hard power loss — **[you must guard this]**
 
 A power cut gives bitcoind no chance to flush. A UPS is the only real mitigation.
 A *planned* reboot is fine provided it goes through `kubectl drain`, which respects

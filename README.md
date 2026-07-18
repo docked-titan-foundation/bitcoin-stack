@@ -123,6 +123,22 @@ bitcoin-node:
       addnode: [seed.example.com]
 ```
 
+**Fast, node-local storage** — the biggest hardware lever on sync speed. Initial
+block download is random-I/O bound; a replicated/network volume (Longhorn, Ceph,
+NFS, cloud block) can stretch a ~1-day sync into weeks. The chain is fully
+re-syncable with no wallet, so local disk is the right trade:
+
+```yaml
+bitcoin-node:
+  storage:
+    storageClass: local-path   # node-local NVMe, not a replicated volume
+  nodeSelector:
+    kubernetes.io/hostname: your-fast-node   # schedule where that disk lives
+```
+
+See [docs/failure-modes.md](docs/failure-modes.md) #7 for the data-locality trap
+this avoids.
+
 ## 🔐 Verifying the chart
 
 Every release is signed with cosign (keyless) and carries an SPDX SBOM

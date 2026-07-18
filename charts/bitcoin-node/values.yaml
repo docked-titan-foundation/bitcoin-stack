@@ -146,7 +146,19 @@ storage:
   # this volume cannot be grown by editing this value alone — volumeClaimTemplates
   # are immutable. See docs/failure-modes.md before you change it.
   size: 900Gi
-  # Empty = the cluster's default StorageClass.
+  # StorageClass for the datadir. Empty = the cluster's default StorageClass.
+  #
+  # This is the single biggest *hardware* lever on sync speed, and the easiest to
+  # get wrong. Initial block download is random-I/O bound, and a Bitcoin node is a
+  # single, fully re-syncable dataset with no wallet — so replicating it buys
+  # durability you do not need while its network data path throttles the sync.
+  # PREFER NODE-LOCAL DISK (local NVMe: a `local-path` provisioner, or a `local`
+  # PV). Replicated / network storage (Longhorn, Ceph, NFS, cloud block volumes)
+  # can turn a ~1-day sync into weeks, and can silently place the volume replica
+  # on a different node than the pod so every cache-miss read is a cross-node
+  # round trip. If you must use it, keep the data node-local (nodeSelector/affinity
+  # onto a node holding a replica) and give memory real headroom (below) so page
+  # cache survives. See docs/failure-modes.md #7 ("Slow or remote storage").
   storageClass: ""
   # Keep the PVC when the release is uninstalled. It holds hundreds of GB that
   # take weeks to re-download; deleting it should be a deliberate, manual act.
@@ -233,6 +245,11 @@ podDisruptionBudget:
 # The datadir is the only thing bitcoind writes to. Everything else is read-only.
 dataDir: /home/bitcoin/.bitcoin
 
+# With node-local storage (see storage.storageClass), pin the pod to the node
+# that holds the datadir so it schedules where its disk is: nodeSelector for a
+# hostname, or affinity for something richer. Co-locating compute with its data is
+# what keeps reads on the local disk instead of crossing the network — the biggest
+# single win for sync speed. See docs/failure-modes.md #7 ("Slow or remote storage").
 nodeSelector: {}
 tolerations: []
 affinity: {}
