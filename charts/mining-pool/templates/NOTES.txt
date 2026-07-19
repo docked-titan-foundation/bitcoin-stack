@@ -16,6 +16,15 @@ Point a miner at it:
   set ON THE MINER, not in this chart. Solo mining pays the coinbase straight to
   it — get it wrong and you mine for someone else.
 
+{{- if .Values.bitcoin.waitForSync.enabled }}
+
+  The pool waits for the node before it starts. Until the node finishes initial
+  block download it has no valid work to serve, so the pod sits in Init as
+  "wait-for-node-sync" (watch: kubectl get pod -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "mining-pool.name" . }}).
+  On a fresh mainnet node that is days, and is expected. Set
+  bitcoin.waitForSync.enabled=false to start the pool immediately instead.
+{{- end }}
+
 {{- if eq .Values.pool.implementation "ckpool" }}
 
   Running ckpool in solo mode from:

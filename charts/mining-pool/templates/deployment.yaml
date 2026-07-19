@@ -51,8 +51,68 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if $isCk }}
+      {{- if or .Values.bitcoin.waitForSync.enabled $isCk }}
       initContainers:
+        {{- if .Values.bitcoin.waitForSync.enabled }}
+        # Block the pool until the node has finished initial block download.
+        # bitcoind's getblocktemplate refuses to serve work during IBD, so a pool
+        # started too early has nothing valid to hand miners. Waiting here keeps
+        # the pod in an honest Init state instead of a crash loop (ckpool) or a
+        # Running-but-useless pod (public-pool). Uses whatever HTTP client the
+        # image ships — curl, BusyBox wget, or node — so it needs no extra tools.
+        - name: wait-for-node-sync
+          image: {{ include "mining-pool.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -u
+              BODY='{"jsonrpc":"1.0","id":"pool-wait","method":"getblockchaininfo","params":[]}'
+              fetch() {
+                if command -v curl >/dev/null 2>&1; then
+                  curl -s -m 10 -u "$RPC_USER:$RPC_PASSWORD" --data "$BODY" "$RPC_URL" 2>/dev/null
+                elif command -v wget >/dev/null 2>&1 && wget --help 2>&1 | grep -q -- --post-data; then
+                  auth=$(printf '%s:%s' "$RPC_USER" "$RPC_PASSWORD" | base64 | tr -d '\n')
+                  wget -q -T 10 -O- --header="Authorization: Basic $auth" \
+                    --header="Content-Type: application/json" --post-data="$BODY" "$RPC_URL" 2>/dev/null
+                elif command -v node >/dev/null 2>&1; then
+                  node -e 'const h=require("http"),d=JSON.stringify({jsonrpc:"1.0",id:"w",method:"getblockchaininfo",params:[]});const r=h.request(process.env.RPC_URL,{method:"POST",timeout:10000,auth:process.env.RPC_USER+":"+process.env.RPC_PASSWORD,headers:{"Content-Type":"application/json","Content-Length":Buffer.byteLength(d)}},x=>{let b="";x.on("data",c=>b+=c);x.on("end",()=>process.stdout.write(b))});r.on("error",()=>process.exit(0));r.on("timeout",()=>{r.destroy();process.exit(0)});r.write(d);r.end();'
+                else
+                  echo "FATAL: image has no curl, wget(--post-data) or node to check node sync with." >&2; exit 3
+                fi
+              }
+              echo "wait-for-node-sync: waiting for $RPC_URL to report initialblockdownload=false"
+              start=$(date +%s)
+              while true; do
+                if fetch | grep -q '"initialblockdownload":false'; then
+                  echo "wait-for-node-sync: node is synced — starting the pool."; exit 0
+                fi
+                if [ "$TIMEOUT" -gt 0 ] && [ "$(( $(date +%s) - start ))" -ge "$TIMEOUT" ]; then
+                  echo "wait-for-node-sync: timed out after ${TIMEOUT}s waiting for the node to sync." >&2; exit 1
+                fi
+                sleep "$INTERVAL"
+              done
+          env:
+            - name: RPC_URL
+              value: {{ printf "http://%s:%v/" (include "mining-pool.rpcHost" .) (include "mining-pool.rpcPort" .) | quote }}
+            - name: RPC_USER
+              value: {{ include "mining-pool.rpcUsername" . | quote }}
+            - name: RPC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mining-pool.rpcSecretName" . }}
+                  key: {{ .Values.bitcoin.existingSecret.key }}
+            - name: INTERVAL
+              value: {{ .Values.bitcoin.waitForSync.intervalSeconds | quote }}
+            - name: TIMEOUT
+              value: {{ .Values.bitcoin.waitForSync.timeoutSeconds | quote }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        {{- end }}
+        {{- if $isCk }}
         # ckpool reads no environment variables — the RPC password has to be
         # inside its JSON config file. Substitute it in here, at startup, from the
         # Secret, into a file on an emptyDir. That keeps the credential out of the
@@ -82,6 +142,7 @@ spec:
               readOnly: true
             - name: config
               mountPath: /config
+        {{- end }}
       {{- end }}
       containers:
         - name: {{ .Values.pool.implementation }}

@@ -146,6 +146,27 @@ bitcoin:
     name: ""
     key: rpc-password
 
+  # Hold the pool back until the node has finished initial block download.
+  #
+  # Until IBD completes, bitcoind's getblocktemplate returns "downloading
+  # blocks", so the pool has no valid work to hand miners: ckpool can crash-loop
+  # on it, and public-pool sits Running but serves dead work. With this on, the
+  # pool pod waits in an Init container ("wait-for-node-sync") — an honest status
+  # — and its main container starts only once the node reports synced.
+  #
+  # The pool recovers on its own without this once the node catches up; this
+  # exists for a clean pod status, to stop days of crash-loop/error noise during
+  # a legitimate sync, and to keep miners off a pool that cannot pay them. The
+  # check uses whatever HTTP client the pool image ships (curl, wget, or node).
+  waitForSync:
+    enabled: true
+    # Seconds between sync checks while the node catches up.
+    intervalSeconds: 15
+    # Give up after this many seconds — the Init container then restarts and
+    # waits again. 0 = wait forever, the right default: a mainnet IBD legitimately
+    # takes days, and waiting it out is exactly the point.
+    timeoutSeconds: 0
+
 # ── Resources ──────────────────────────────────────────────────────────────────
 resources:
   requests:

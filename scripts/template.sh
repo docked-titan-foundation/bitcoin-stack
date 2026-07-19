@@ -87,6 +87,7 @@ check "custom node image (BYO, digest pinned)"  validate --set bitcoin-node.node
                                              --set bitcoin-node.image.repository=ghcr.io/example/bitcoin \
                                              --set bitcoin-node.image.tag=git-3f1a9c2 \
                                              --set bitcoin-node.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
+check "pool wait-for-sync disabled"        validate --set mining-pool.bitcoin.waitForSync.enabled=false
 
 hr
 echo "🔒 Hardening assertions on the rendered output"
