@@ -137,6 +137,10 @@ check_guard "a pool with no node to mine on is refused" \
   "no external node was given" \
   render --set bitcoin-node.enabled=false
 
+check_guard "disabling both subcharts is refused" \
+  "there is nothing to install" \
+  render --set bitcoin-node.enabled=false --set mining-pool.enabled=false
+
 hr
 if [ "$failures" -ne 0 ]; then
   echo "❌ ${failures} failed"

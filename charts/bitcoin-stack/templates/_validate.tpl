@@ -9,6 +9,15 @@ the only place that sees both.
 {{- $node := index .Values "bitcoin-node" -}}
 {{- $pool := index .Values "mining-pool" -}}
 
+{{/*
+Disabling both leaves nothing to install. Helm renders it happily — an empty
+release that reports success — so a fat-fingered values file would fail silently.
+Refuse it loudly instead.
+*/}}
+{{- if and (not $node.enabled) (not $pool.enabled) -}}
+{{- fail "\n\nBoth bitcoin-node.enabled and mining-pool.enabled are false: there is nothing to install.\n\nEnable at least one:\n  - bitcoin-node.enabled=true   a Bitcoin node (useful on its own)\n  - mining-pool.enabled=true    a mining pool (needs a node to mine on)\n" -}}
+{{- end -}}
+
 {{- if and $pool.enabled (not $node.enabled) -}}
 {{- $host := dig "bitcoin" "rpc" "host" "" $pool -}}
 {{- if not $host -}}
