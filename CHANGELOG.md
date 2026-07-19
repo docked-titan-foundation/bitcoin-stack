@@ -1,3 +1,10 @@
+# [1.0.0-beta.2](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* **node:** treat a null config option as unset under the Core guard ([5c6f437](https://github.com/docked-titan-foundation/bitcoin-stack/commit/5c6f4376421bd955887ea1770c239f7808168eee))
+
 # 1.0.0-beta.1 (2026-07-19)
 
 

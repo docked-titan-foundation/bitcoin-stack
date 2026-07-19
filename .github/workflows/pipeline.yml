@@ -9,7 +9,6 @@ on:
         required: false
   push:
     branches: [main, beta]
-    tags: ['v*']
 
 concurrency:
   group: cicd-${{ github.ref }}

@@ -2,8 +2,8 @@ apiVersion: v2
 name: bitcoin-node
 description: A hardened Bitcoin full node (Knots or Core). One StatefulSet, one PVC, in-cluster RPC and ZMQ.
 type: application
-version: 1.0.0-beta.1
-appVersion: "1.0.0-beta.1"
+version: 1.0.0-beta.2
+appVersion: "1.0.0-beta.2"
 kubeVersion: ">=1.25.0-0"
 keywords:
   - bitcoin
