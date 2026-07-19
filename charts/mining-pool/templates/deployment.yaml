@@ -82,11 +82,18 @@ spec:
                   echo "FATAL: image has no curl, wget(--post-data) or node to check node sync with." >&2; exit 3
                 fi
               }
-              echo "wait-for-node-sync: waiting for $RPC_URL to report initialblockdownload=false"
+              echo "wait-for-node-sync: waiting for $RPC_URL to finish initial block download..."
               start=$(date +%s)
               while true; do
-                if fetch | grep -q '"initialblockdownload":false'; then
-                  echo "wait-for-node-sync: node is synced — starting the pool."; exit 0
+                resp="$(fetch)"
+                # Ready when IBD is done. Regtest is a special case: it has no
+                # chain to sync and its lone genesis block is ancient, so bitcoind
+                # reports initialblockdownload=true forever until a block is mined
+                # — gating on it there would deadlock. There is nothing to wait for
+                # on regtest, so treat it as ready immediately.
+                if printf '%s' "$resp" | grep -q '"initialblockdownload":false' \
+                   || printf '%s' "$resp" | grep -q '"chain":"regtest"'; then
+                  echo "wait-for-node-sync: node is ready — starting the pool."; exit 0
                 fi
                 if [ "$TIMEOUT" -gt 0 ] && [ "$(( $(date +%s) - start ))" -ge "$TIMEOUT" ]; then
                   echo "wait-for-node-sync: timed out after ${TIMEOUT}s waiting for the node to sync." >&2; exit 1

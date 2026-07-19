@@ -158,6 +158,11 @@ bitcoin:
   # exists for a clean pod status, to stop days of crash-loop/error noise during
   # a legitimate sync, and to keep miners off a pool that cannot pay them. The
   # check uses whatever HTTP client the pool image ships (curl, wget, or node).
+  #
+  # Regtest is exempt automatically: it has no chain to sync and its lone genesis
+  # block is ancient, so bitcoind reports initialblockdownload=true until a block
+  # is mined — waiting on that would deadlock. The init container treats a regtest
+  # node as ready immediately.
   waitForSync:
     enabled: true
     # Seconds between sync checks while the node catches up.

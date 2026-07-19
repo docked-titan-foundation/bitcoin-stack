@@ -1,3 +1,10 @@
+# [1.0.0-beta.3](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2026-07-19)
+
+
+### Bug Fixes
+
+* **pool:** correct the stale public-pool image digest ([e7d22e6](https://github.com/docked-titan-foundation/bitcoin-stack/commit/e7d22e6f992a2f07adc606307827aa7baee6aa1c))
+
 # [1.0.0-beta.2](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-07-19)
 
 
