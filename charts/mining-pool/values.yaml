@@ -122,7 +122,7 @@ stratum:
 image:
   repository: ghcr.io/docked-titan-foundation/public-pool
   tag: "latest"
-  digest: "sha256:af2cbc7d95d4fa7021fd936067296198311f7839b56f5b015718d50e45bd6c2b"
+  digest: "sha256:f1fc49d795baed6ccfa12f3f4469658240ef8ee866d3b190e789b7860bba2066"
   pullPolicy: IfNotPresent
 
 # ── The Bitcoin node to mine on ────────────────────────────────────────────────
