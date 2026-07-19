@@ -123,6 +123,19 @@ bitcoin-node:
       addnode: [seed.example.com]
 ```
 
+**Bring your own node image** — any bitcoind-compatible build, pinned by digest.
+`custom` skips the Knots/Core dialect guard, so you own the config entirely:
+
+```yaml
+bitcoin-node:
+  node:
+    implementation: custom     # no preset, no dialect guard
+  image:
+    repository: ghcr.io/you/bitcoin   # registry URL + repo path
+    tag: git-3f1a9c2                  # a version or commit reference
+    digest: "sha256:…"               # the pin (required unless you opt out)
+```
+
 **Fast, node-local storage** — the biggest hardware lever on sync speed. Initial
 block download is random-I/O bound; a replicated/network volume (Longhorn, Ceph,
 NFS, cloud block) can stretch a ~1-day sync into weeks. The chain is fully

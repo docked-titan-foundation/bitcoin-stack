@@ -14,12 +14,22 @@
 
 # ── Which implementation ───────────────────────────────────────────────────────
 node:
-  # knots | core
+  # knots | core | custom
   #
-  # Knots is Core plus extra policy/relay options and a different default policy
-  # stance; Core is the reference implementation. Both speak the same RPC, ship
-  # the same datadir layout, and are interchangeable as far as this chart cares —
-  # only the image and a few Knots-only config options differ.
+  # This selects two things: the default image (see `image` below) and which
+  # config *dialect* the safety guards assume. It does NOT gate config injection —
+  # node.config, node.configList and node.extraConfig are rendered verbatim on
+  # every implementation.
+  #
+  #   knots   Core plus extra policy/relay options and a different default policy
+  #           stance. The default image is the pinned Knots preset.
+  #   core    the reference implementation. The render FAILS if a Knots-only
+  #           option (consensusrules, spkreuse, corepolicy) is set, because Core
+  #           exits on an unknown option and would crash-loop.
+  #   custom  bring your own bitcoind-compatible image (set `image.*` below).
+  #           There is no preset and no dialect assumption — the Knots-only guard
+  #           does not run, so you own the config entirely. The memory, grace-
+  #           period and digest-pinning guards still apply.
   implementation: knots
 
   # main | test | signet | regtest. Network-scoped options below are emitted into
@@ -75,8 +85,14 @@ images:
     tag: "31.1"
     digest: "sha256:da25cedc66b1daefff9f412ee196c901a899c3fa68a33b20849c3e08b5c40d63"
 
-# Override the selected preset (e.g. to run your own build). Leave empty to use
-# the preset for node.implementation.
+# Bring your own build. Leave repository empty to use the pinned preset for
+# node.implementation; set it (usually together with node.implementation: custom)
+# to run any bitcoind-compatible image. image.* is used as a UNIT — the chart
+# never merges your repository with a preset's digest — so set the three together:
+#   repository  registry URL + repo path, e.g. ghcr.io/you/bitcoin
+#   tag         a version or commit reference, e.g. v29.3 or git-3f1a9c2
+#   digest      sha256:… — the actual pin. A tag (even a commit tag) is a mutable
+#               pointer; the digest is required unless safety.allowUnpinnedImage.
 image:
   repository: ""
   tag: ""

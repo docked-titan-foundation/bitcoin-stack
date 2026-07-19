@@ -97,21 +97,25 @@ value that bitcoind expresses in plain MiB.
 {{- end -}}
 
 {{/*
-The image reference, resolved from node.implementation unless overridden.
+The image reference: a preset selected by node.implementation, or your own build.
 
 Pinned by digest. A tag is a mutable pointer — the same tag can be repointed at
 different bytes tomorrow — and this is a process that holds the keys to money.
+
+image.* is used as a UNIT, never merged field-by-field with a preset: a preset's
+digest names the preset's repository, so mixing your repository with it would
+produce a reference that resolves to the wrong bytes or to nothing at all.
 */}}
 {{- define "bitcoin-node.image" -}}
-{{- $impl := .Values.node.implementation -}}
-{{- $preset := index .Values.images $impl -}}
-{{- $repo := .Values.image.repository | default $preset.repository -}}
-{{- $tag := .Values.image.tag | default $preset.tag -}}
-{{- $digest := .Values.image.digest | default $preset.digest -}}
-{{- if $digest -}}
-{{- printf "%s:%s@%s" $repo $tag $digest -}}
+{{- if .Values.image.repository -}}
+{{- if .Values.image.digest -}}
+{{- printf "%s:%s@%s" .Values.image.repository .Values.image.tag .Values.image.digest -}}
 {{- else -}}
-{{- printf "%s:%s" $repo $tag -}}
+{{- printf "%s:%s" .Values.image.repository .Values.image.tag -}}
+{{- end -}}
+{{- else -}}
+{{- $preset := index .Values.images .Values.node.implementation -}}
+{{- printf "%s:%s@%s" $preset.repository $preset.tag $preset.digest -}}
 {{- end -}}
 {{- end -}}
 
@@ -137,8 +141,15 @@ destroy a datadir that takes weeks to rebuild.
 */}}
 {{- define "bitcoin-node.validate" -}}
 {{- $impl := .Values.node.implementation -}}
-{{- if not (has $impl (list "knots" "core")) -}}
-{{- fail (printf "\n\nnode.implementation must be 'knots' or 'core', got '%s'.\n" $impl) -}}
+{{- if not (has $impl (list "knots" "core" "custom")) -}}
+{{- fail (printf "\n\nnode.implementation must be 'knots', 'core', or 'custom', got '%s'.\n" $impl) -}}
+{{- end -}}
+
+{{/* 'custom' brings your own bitcoind-compatible image: there is no preset to
+     fall back on, so image.* is required. It also makes no dialect assumption —
+     the Knots-only-option guard below does not run, and you own the config. */}}
+{{- if and (eq $impl "custom") (not .Values.image.repository) -}}
+{{- fail "\n\nnode.implementation is 'custom' but image.repository is empty.\n\n'custom' runs your own bitcoind-compatible image, so the chart needs one. Set\nimage.repository, image.tag and image.digest together (the digest is the pin — a\ntag, even a commit-based one, is a mutable pointer). To run a stock build instead,\nset node.implementation to 'knots' or 'core'.\n" -}}
 {{- end -}}
 
 {{- if not (has .Values.node.network (list "main" "test" "signet" "regtest")) -}}
@@ -162,12 +173,18 @@ destroy a datadir that takes weeks to rebuild.
 {{- end -}}
 {{- end -}}
 
-{{/* Supply chain: no unpinned images. */}}
+{{/* Supply chain: no unpinned images. The digest comes from image.* for a
+     bring-your-own build, or from the selected preset otherwise — the same unit
+     the image reference itself is built from, never a mix of the two. */}}
 {{- if not .Values.safety.allowUnpinnedImage -}}
-{{- $preset := index .Values.images $impl -}}
-{{- $digest := .Values.image.digest | default $preset.digest -}}
+{{- $digest := "" -}}
+{{- if .Values.image.repository -}}
+{{- $digest = .Values.image.digest -}}
+{{- else -}}
+{{- $digest = (index .Values.images $impl).digest -}}
+{{- end -}}
 {{- if not $digest -}}
-{{- fail (printf "\n\nThe %s image is not pinned by digest.\nA tag is a mutable pointer; this process holds the keys to money.\nSet images.%s.digest (or image.digest), or set safety.allowUnpinnedImage=true to\naccept the risk deliberately.\n" $impl $impl) -}}
+{{- fail (printf "\n\nThe %s image is not pinned by digest.\nA tag is a mutable pointer; this process holds the keys to money.\nSet image.digest (or images.%s.digest for a stock preset), or set\nsafety.allowUnpinnedImage=true to accept the risk deliberately.\n" $impl $impl) -}}
 {{- end -}}
 {{- end -}}
 

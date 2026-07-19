@@ -83,12 +83,19 @@ check "knots, signet"                      validate --set bitcoin-node.node.netw
 check "node only, no pool"                 validate --set mining-pool.enabled=false
 check "ckpool (org image, digest pinned)"  validate --set mining-pool.pool.implementation=ckpool \
                                              --set mining-pool.pool.ckpool.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
+check "custom node image (BYO, digest pinned)"  validate --set bitcoin-node.node.implementation=custom \
+                                             --set bitcoin-node.image.repository=ghcr.io/example/bitcoin \
+                                             --set bitcoin-node.image.tag=git-3f1a9c2 \
+                                             --set bitcoin-node.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 hr
 echo "🔒 Hardening assertions on the rendered output"
 hr
 check "default: non-root, no caps, read-only root, digest-pinned" assert_hardened
 check "core:    non-root, no caps, read-only root, digest-pinned" assert_hardened --set bitcoin-node.node.implementation=core --set bitcoin-node.node.config.consensusrules=null
+check "custom:  non-root, no caps, read-only root, digest-pinned" assert_hardened --set bitcoin-node.node.implementation=custom \
+  --set bitcoin-node.image.repository=ghcr.io/example/bitcoin --set bitcoin-node.image.tag=git-3f1a9c2 \
+  --set bitcoin-node.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 hr
 echo "🚧 The guards must refuse what they are there to refuse"
@@ -108,6 +115,15 @@ check_guard "an unpinned node image is refused" \
 check_guard "a Knots-only option under Core is refused" \
   "is a Bitcoin Knots option" \
   render --set bitcoin-node.node.implementation=core --set bitcoin-node.node.config.consensusrules=rdts
+
+check_guard "a custom implementation without an image is refused" \
+  "image.repository is empty" \
+  render --set bitcoin-node.node.implementation=custom
+
+check_guard "a custom image without a digest is refused" \
+  "not pinned by digest" \
+  render --set bitcoin-node.node.implementation=custom \
+    --set bitcoin-node.image.repository=ghcr.io/example/bitcoin --set bitcoin-node.image.tag=git-3f1a9c2
 
 check_guard "ckpool with an unpinned image is refused" \
   "not pinned by digest" \

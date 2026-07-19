@@ -9,7 +9,7 @@
       "properties": {
         "implementation": {
           "type": "string",
-          "enum": ["knots", "core"]
+          "enum": ["knots", "core", "custom"]
         },
         "network": {
           "type": "string",
