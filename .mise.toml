@@ -5,7 +5,9 @@ node          = "24"
 # Chart toolchain
 helm          = "3.19.0"
 kubectl       = "1.34.1"
-chart-testing = "3.14.0"
+# Backend-qualified: mise's short-name registry no longer maps bare
+# `chart-testing`. This provides the `ct` binary the lint tasks call.
+"aqua:helm/chart-testing" = "3.14.0"
 kubeconform   = "0.7.0"
 kind          = "0.30.0"
 yamllint      = "1.37.1"
