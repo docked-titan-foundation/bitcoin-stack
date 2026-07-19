@@ -18,7 +18,7 @@ REGISTRY   = "ghcr.io/docked-titan-foundation"
 CHART_NAME = "bitcoin-stack"
 # Local package version only — the real version comes from semantic-release. Kept
 # in step with the latest release by scripts/update-versions.sh.
-VERSION    = "v0.0.0-local"
+VERSION    = "v1.0.0-beta.1-local"
 # Set DEBUG=1 to stream build/test output instead of only the pass/fail line.
 DEBUG      = "0"
 

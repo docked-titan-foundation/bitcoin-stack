@@ -16,6 +16,7 @@ Pick your implementations with a value. Nothing else changes:
 
 | | Options |
 |---|---|
+| 1.0.0-beta.1 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 | Node | **Bitcoin Knots** or **Bitcoin Core** |
 | Pool | **public-pool** or **ckpool** |
 

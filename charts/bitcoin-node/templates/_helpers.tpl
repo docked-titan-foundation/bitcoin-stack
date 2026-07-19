@@ -160,8 +160,12 @@ destroy a datadir that takes weeks to rebuild.
      option, so this would be a crash loop discovered at 3am rather than now. */}}
 {{- if eq $impl "core" -}}
 {{- $knotsOnly := list "consensusrules" "spkreuse" "corepolicy" -}}
-{{- range $key, $_ := .Values.node.config -}}
-{{- if has $key $knotsOnly -}}
+{{- range $key, $val := .Values.node.config -}}
+{{/* A null value means the option is explicitly unset — e.g. `--set
+     node.config.consensusrules=null` to turn a Knots default off under Core. It
+     is not in effect, so it must not trip the guard (and helm 3 keeps the null
+     key in the map where helm 4 drops it, so the check has to be explicit). */}}
+{{- if and (has $key $knotsOnly) (not (kindIs "invalid" $val)) -}}
 {{- fail (printf "\n\nnode.config.%s is a Bitcoin Knots option, but node.implementation is 'core'.\nCore does not recognise it and bitcoind refuses to start on an unknown option.\nEither switch to node.implementation=knots or remove this option.\n" $key) -}}
 {{- end -}}
 {{- end -}}

@@ -19,9 +19,13 @@ data:
     {{ $net }}=1
     {{- end }}
 
-    {{- /* Simple key=value options. */}}
+    {{- /* Simple key=value options. A null value means the option is explicitly
+           unset (e.g. to disable a Knots default under Core), so skip it rather
+           than emit a bare `key=` line that bitcoind would reject. */}}
     {{- range $key, $value := .Values.node.config }}
+    {{- if not (kindIs "invalid" $value) }}
     {{ $key }}={{ $value }}
+    {{- end }}
     {{- end }}
 
     {{- /* Options bitcoind accepts more than once. */}}
