@@ -4,7 +4,7 @@
 # Chart.yaml must not carry one.
 set -e
 
-VERSION="${VERSION:-v0.0.0.local}"
+VERSION="${VERSION:-v0.0.0-local}"
 CHART_VERSION="${VERSION#v}"
 DEBUG="${DEBUG:-0}"
 

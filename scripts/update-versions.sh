@@ -40,7 +40,9 @@ print(f"   charts/bitcoin-stack/Chart.yaml (dependency pins → {version})")
 PY
 
 # The local build tag, so `mise run build` produces something recognisable.
-sed -i -E "s/^VERSION    = .*/VERSION    = \"v${VERSION}.local\"/" .mise.toml
+# `-local` is a SemVer prerelease suffix: `1.2.0-local` is valid, `1.2.0.local`
+# (a 4th version segment) is not, and helm package rejects it.
+sed -i -E "s/^VERSION    = .*/VERSION    = \"v${VERSION}-local\"/" .mise.toml
 echo "   .mise.toml"
 
 # The README's version matrix. The table header rule is the anchor; a new row is
