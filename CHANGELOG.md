@@ -1,3 +1,10 @@
+# [1.0.0-beta.4](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-07-19)
+
+
+### Bug Fixes
+
+* **pool:** treat a regtest node as synced in the wait-for-node-sync gate ([9e6a890](https://github.com/docked-titan-foundation/bitcoin-stack/commit/9e6a890e05f02895d06243525cad77c482ded3bf))
+
 # [1.0.0-beta.3](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2026-07-19)
 
 

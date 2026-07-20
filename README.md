@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/bitcoin-stack-banner.svg" alt="Bitcoin Stack — your node, your rules, by Alberto Iglesias" />
+</p>
+
 [![CI_CD](https://github.com/docked-titan-foundation/bitcoin-stack/actions/workflows/pipeline.yml/badge.svg)](https://github.com/docked-titan-foundation/bitcoin-stack/actions/workflows/pipeline.yml)
 ![Release](https://img.shields.io/github/v/release/docked-titan-foundation/bitcoin-stack)
 [![Renovate](https://img.shields.io/badge/renovate-enabled-brightgreen.svg)](https://renovatebot.com)
@@ -16,7 +20,8 @@ Pick your implementations with a value. Nothing else changes:
 
 | | Options |
 |---|---|
-| 1.0.0-beta.3 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
+| 1.0.0-beta.4 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
+| 1.0.0-beta.3 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 | 1.0.0-beta.2 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 | 1.0.0-beta.1 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 | Node | **Bitcoin Knots** or **Bitcoin Core** |
