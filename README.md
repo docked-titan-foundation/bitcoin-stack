@@ -12,9 +12,12 @@
 
 A hardened Helm chart for a **Bitcoin node** and a **mining pool that mines on it**.
 
-```text
-  miner ──stratum:3333──> mining-pool ──RPC + ZMQ──> bitcoin-node ──P2P──> the network
-```
+<p align="center">
+  <img src="docs/images/architecture.png" width="900"
+       alt="Bitcoin Stack architecture: a miner connects over Stratum (:3333) to the mining pool, which talks to the Bitcoin node over RPC (:8332) and ZMQ (:28332); the node reaches the Bitcoin network over P2P (:8333). The pool and node ship together as one hardened Helm release." />
+</p>
+
+<sub>Source: <a href="docs/diagrams/architecture.drawio"><code>docs/diagrams/architecture.drawio</code></a> (draw.io / diagrams.net) — edit it and re-export the PNG.</sub>
 
 Pick your implementations with a value. Nothing else changes:
 
