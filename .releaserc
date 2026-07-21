@@ -4,7 +4,21 @@
     { "name": "beta", "prerelease": true }
   ],
   "plugins": [
-    "@semantic-release/commit-analyzer",
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "releaseRules": [
+          { "type": "feat", "scope": "!(node|pool|stack)", "release": false },
+          { "type": "fix", "scope": "!(node|pool|stack)", "release": false },
+          { "type": "perf", "scope": "!(node|pool|stack)", "release": false },
+          { "revert": true, "scope": "!(node|pool|stack)", "release": false },
+          { "breaking": true, "release": "major" },
+          { "type": "feat", "scope": "(node|pool|stack)", "release": "minor" },
+          { "type": "fix", "scope": "(node|pool|stack)", "release": "patch" },
+          { "type": "perf", "scope": "(node|pool|stack)", "release": "patch" }
+        ]
+      }
+    ],
     "@semantic-release/release-notes-generator",
     [
       "@semantic-release/changelog",

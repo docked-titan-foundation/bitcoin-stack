@@ -1,3 +1,12 @@
+# [1.0.0-beta.7](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-07-21)
+
+
+### Bug Fixes
+
+* **ci:** skip the weekly rebuild when there is no stable release ([15a4b6f](https://github.com/docked-titan-foundation/bitcoin-stack/commit/15a4b6f80b7bc6670bfb57dccfdb8b7e27d9eacf)), closes [#1](https://github.com/docked-titan-foundation/bitcoin-stack/issues/1)
+* **license:** ship the GPL-3.0 text inside each packaged chart ([ec202d9](https://github.com/docked-titan-foundation/bitcoin-stack/commit/ec202d9ae2aa5c025219f76b486d651e5b1d2669))
+* **release:** land version-matrix rows in the correct README table ([ba833e8](https://github.com/docked-titan-foundation/bitcoin-stack/commit/ba833e84c5ee29b605c07d65cf218392d559264f)), closes [#2](https://github.com/docked-titan-foundation/bitcoin-stack/issues/2)
+
 # [1.0.0-beta.6](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.5...v1.0.0-beta.6) (2026-07-21)
 
 

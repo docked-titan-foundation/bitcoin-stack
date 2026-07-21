@@ -119,35 +119,42 @@ Beta releases use pre-release tags (e.g., `1.5.0-beta.0`).
 ### Conventional Commits
 
 All commits must follow the [Conventional Commits](https://www.conventionalcommits.org/)
-specification with Angular-style formatting:
+specification with Angular-style formatting, and **a scope is required** —
+`commitlint` rejects a scopeless commit, because the scope is what decides
+whether a commit cuts a release (see below).
 
 - Format: `<type>(<scope>): <description>`
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`, `build`, `revert`
-- Scope indicates the affected area (e.g., `node`, `pool`, `stack`, `ci`, `dependencies`)
-- Breaking changes must be indicated with `!` after type/scope or `BREAKING CHANGE:` in footer
-- Example: `feat(pipeline): add beta branch support`
+- **Shipping scopes** — `node`, `pool`, `stack` (the chart artifact itself)
+- **Non-shipping scopes** — `deps`, `dependencies`, `ci`, `release`, `docs`,
+  `license`, `repo`, `test`, `build`, `security` (everything around the chart)
+- Breaking changes must be indicated with `!` after type/scope or a `BREAKING CHANGE:` footer
+- Example: `feat(node): support Bitcoin Core 32`
 
-### Commit Types and Release Rules
+### What triggers a release
 
-Commits are categorized into two groups for release triggering:
+The chart version tracks **what ships**. It bumps only when one of the four
+implementations changes version (Bitcoin Knots, Bitcoin Core, public-pool,
+ckpool) or the Helm chart itself changes structurally — nothing else. That policy
+is encoded as a scope whitelist in `.releaserc`: a release is cut only for a
+`feat`, `fix`, or `perf` commit on a **shipping scope**.
 
-**Version-bumping commits** — these produce a release:
+| Scope | Covers | `feat` | `fix` / `perf` |
+|-------|--------|--------|----------------|
+| `node` | Knots/Core image version, node chart templates | minor | patch |
+| `pool` | public-pool/ckpool image version, pool chart templates | minor | patch |
+| `stack` | umbrella chart structure and wiring | minor | patch |
 
-- `feat` — a new value, a new capability, a node image version bump
-  (e.g., `feat(node): support Bitcoin Core 32`)
-- `fix` — a template bug, a digest bump
-  (e.g., `fix(pool): pin public-pool to a new digest`)
-- `feat!` or a `BREAKING CHANGE:` footer — a breaking values change
+A `BREAKING CHANGE:` (or `!`) always cuts a **major**, whatever the scope — so
+reserve the marker for a change that actually breaks chart users.
 
-**Non-release commits** — These improve the project without triggering a release. Use for:
-
-- `chore` — maintenance tasks, dependency updates (non-sub-tool), CI/CD config
-- `refactor` — code restructuring without functional changes
-- `docs` — documentation updates
-- `style` — formatting, lint fixes
-- `test` — test additions/updates
-- `ci` — CI configuration updates
-- `build` — build system changes
+**Everything else is release-neutral.** Any commit on a non-shipping scope
+(`fix(ci)`, `docs(readme)`, `chore(deps)`, `fix(release)`, `fix(license)`, …), and
+`chore`/`refactor`/`style` in general, lands on `beta` and shows up in the next
+changelog, but does not on its own cut a version. This is deliberate: a CI fix, a
+README correction, or bundling a license file should not mint a throwaway
+release — only a change to a shipped implementation or to the chart's structure
+should move the number.
 
 ### Release Triggers
 
