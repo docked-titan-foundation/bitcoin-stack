@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
+      found: ${{ steps.resolve.outputs.found }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -45,15 +46,22 @@ jobs:
           else
             VERSION=$(git tag --sort=-v:refname | grep -v -- '-' | head -1 | sed 's/^v//')
           fi
+          # No stable release yet (the chart is still in beta): there is nothing
+          # to rebuild, and that is not a failure. Skip cleanly rather than
+          # exiting non-zero, which would fire notify-failure and file a bogus
+          # "rebuild failed for v" security issue every Sunday.
           if [ -z "$VERSION" ]; then
-            echo "::error::no released version to rebuild"
-            exit 1
+            echo "::notice::no stable release to rebuild yet — skipping"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Rebuilding ${VERSION}"
 
   build:
     needs: resolve
+    if: needs.resolve.outputs.found == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
