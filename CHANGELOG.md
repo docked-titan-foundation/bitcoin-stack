@@ -1,3 +1,10 @@
+# [1.0.0-beta.5](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-07-20)
+
+
+### Bug Fixes
+
+* **node:** quote the ESO rpc-password value so externalSecret renders valid YAML ([3d6e3d8](https://github.com/docked-titan-foundation/bitcoin-stack/commit/3d6e3d8ebffb6837690994849104c5232083cb9b))
+
 # [1.0.0-beta.4](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-07-19)
 
 

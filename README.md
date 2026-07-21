@@ -23,7 +23,8 @@ Pick your implementations with a value. Nothing else changes:
 
 | | Options |
 |---|---|
-| 1.0.0-beta.4 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
+| 1.0.0-beta.5 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-20 |
+| 1.0.0-beta.4 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 | 1.0.0-beta.3 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 | 1.0.0-beta.2 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 | 1.0.0-beta.1 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
