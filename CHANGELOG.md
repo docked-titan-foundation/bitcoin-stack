@@ -1,3 +1,10 @@
+# [1.0.0-beta.6](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.5...v1.0.0-beta.6) (2026-07-21)
+
+
+### Bug Fixes
+
+* **node:** use external-secrets.io/v1 for the ExternalSecret ([5be6372](https://github.com/docked-titan-foundation/bitcoin-stack/commit/5be6372ec84029e85704f177eb871f9636cb1989))
+
 # [1.0.0-beta.5](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-07-20)
 
 

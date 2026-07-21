@@ -23,11 +23,6 @@ Pick your implementations with a value. Nothing else changes:
 
 | | Options |
 |---|---|
-| 1.0.0-beta.5 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-20 |
-| 1.0.0-beta.4 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
-| 1.0.0-beta.3 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
-| 1.0.0-beta.2 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
-| 1.0.0-beta.1 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 | Node | **Bitcoin Knots** or **Bitcoin Core** |
 | Pool | **public-pool** or **ckpool** |
 
@@ -183,10 +178,17 @@ cosign verify-attestation --type spdxjson \
 
 ## 📋 Version Matrix
 
-### Stable Releases
+Released chart versions and the implementation versions each one ships.
+Pre-releases carry a `-beta.N` suffix.
 
 | Chart | Knots | Core | Pool | Date |
 |---|---|---|---|---|
+| 1.0.0-beta.6 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-21 |
+| 1.0.0-beta.5 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-20 |
+| 1.0.0-beta.4 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
+| 1.0.0-beta.3 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
+| 1.0.0-beta.2 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
+| 1.0.0-beta.1 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
 
 ## 🛠️ Development
 

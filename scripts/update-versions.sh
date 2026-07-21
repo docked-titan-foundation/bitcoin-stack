@@ -45,8 +45,13 @@ PY
 sed -i -E "s/^VERSION    = .*/VERSION    = \"v${VERSION}-local\"/" .mise.toml
 echo "   .mise.toml"
 
-# The README's version matrix. The table header rule is the anchor; a new row is
-# inserted directly beneath it, and the previous "(latest)" marker is dropped.
+# The README's version matrix. The new row is inserted beneath the matrix's
+# header-separator line, and the previous "(latest)" marker is dropped.
+#
+# The anchor must be the *matrix* separator, not the first "|---|" in the file:
+# the README has other tables above this one (e.g. the "Options" table), so the
+# awk arms only after it has seen the matrix header row and fires on the very
+# next separator line — otherwise release rows land in the wrong table.
 NODE_KNOTS="$(grep -A2 '^  knots:' charts/bitcoin-node/values.yaml | grep 'tag:' | sed -E 's/.*"(.*)".*/\1/')"
 NODE_CORE="$(grep -A2 '^  core:' charts/bitcoin-node/values.yaml | grep 'tag:' | sed -E 's/.*"(.*)".*/\1/')"
 
@@ -54,7 +59,8 @@ if grep -q '^| Chart | Knots | Core | Pool | Date |$' README.md; then
   sed -i -E 's/ \(latest\)//' README.md
   awk -v ver="$VERSION" -v knots="$NODE_KNOTS" -v core="$NODE_CORE" -v date="$DATE" '
     { print }
-    /^\|[- |:]+\|$/ && !done {
+    /^\| Chart \| Knots \| Core \| Pool \| Date \|$/ { in_matrix = 1 }
+    in_matrix && !done && /^\|[- |:]+\|$/ {
       printf "| %s (latest) | %s | %s | public-pool | %s |\n", ver, knots, core, date
       done = 1
     }
