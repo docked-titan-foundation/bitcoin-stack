@@ -34,3 +34,22 @@ annotations:
   org.opencontainers.image.source: https://github.com/docked-titan-foundation/bitcoin-stack
   org.opencontainers.image.licenses: GPL-3.0
   org.opencontainers.image.vendor: Docked Titan Foundation
+  # Artifact Hub metadata (https://artifacthub.io/docs/topics/annotations/helm/)
+  artifacthub.io/license: GPL-3.0
+  artifacthub.io/prerelease: "true"
+  artifacthub.io/operator: "false"
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://github.com/docked-titan-foundation/bitcoin-stack#readme
+    - name: Failure modes
+      url: https://github.com/docked-titan-foundation/bitcoin-stack/blob/main/docs/failure-modes.md
+    - name: Source
+      url: https://github.com/docked-titan-foundation/bitcoin-stack
+    - name: Support
+      url: https://github.com/docked-titan-foundation/bitcoin-stack/issues
+  artifacthub.io/maintainers: |
+    - name: Docked Titan Foundation
+      email: security.emporium706@passmail.com
+  artifacthub.io/signKey: |
+    fingerprint: keyless (Sigstore/Fulcio)
+    url: https://github.com/docked-titan-foundation/bitcoin-stack#-verifying-the-chart

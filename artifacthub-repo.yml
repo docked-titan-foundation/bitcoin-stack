@@ -1,0 +1,11 @@
+# Artifact Hub repository metadata.
+# https://artifacthub.io/docs/topics/repositories/#ownership-claim
+#
+# After adding this repo on Artifact Hub, copy the generated Repository ID from the
+# repo's control-panel settings into `repositoryID` below to claim ownership. This
+# lets Artifact Hub attribute the repo to the organisation and surface the
+# verified-publisher and security-report badges.
+repositoryID: ""
+owners:
+  - name: Docked Titan Foundation
+    email: security.emporium706@passmail.com
