@@ -149,7 +149,7 @@ A `BREAKING CHANGE:` (or `!`) always cuts a **major**, whatever the scope — so
 reserve the marker for a change that actually breaks chart users.
 
 **Everything else is release-neutral.** Any commit on a non-shipping scope
-(`fix(ci)`, `docs(readme)`, `chore(deps)`, `fix(release)`, `fix(license)`, …), and
+(`fix(ci)`, `docs(repo)`, `chore(deps)`, `fix(release)`, `fix(license)`, …), and
 `chore`/`refactor`/`style` in general, lands on `beta` and shows up in the next
 changelog, but does not on its own cut a version. This is deliberate: a CI fix, a
 README correction, or bundling a license file should not mint a throwaway
