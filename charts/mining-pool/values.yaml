@@ -71,11 +71,8 @@ pool:
     # Do not reformat these three lines — Renovate's regex matches them.
     image:
       repository: ghcr.io/docked-titan-foundation/ckpool
-      tag: "v1"
-      # Filled in when the image is first published; until then the digest guard
-      # requires you to set it (or set safety.allowUnpinnedImage=true). See the
-      # ckpool image repo: github.com/docked-titan-foundation/ckpool
-      digest: ""
+      tag: "v1.0.0"
+      digest: "sha256:80c3bbc3b63b9602f7adfeca30cb8d16b9b73245e55dc92cc7600b1ed29a98e7"
 
     # ckpool.conf, as data — rendered to JSON verbatim. Any ckpool option works
     # without touching the chart. `btcd`, `serverurl`, `zmqblock` and solo mode
@@ -121,8 +118,8 @@ stratum:
 # them.
 image:
   repository: ghcr.io/docked-titan-foundation/public-pool
-  tag: "latest"
-  digest: "sha256:f1fc49d795baed6ccfa12f3f4469658240ef8ee866d3b190e789b7860bba2066"
+  tag: "v1.0.0"
+  digest: "sha256:5e405d158273ef11ed107fc82f0f5ddcf8bfe0168ba9a1cd5555063ee01efa53"
   pullPolicy: IfNotPresent
 
 # ── The Bitcoin node to mine on ────────────────────────────────────────────────
