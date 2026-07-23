@@ -127,7 +127,7 @@ mining-pool:
 
 ```bash
 helm install btc oci://ghcr.io/docked-titan-foundation/bitcoin-stack \
-  --version 1.0.0-beta.7 \
+  --version <version> \
   --namespace bitcoin --create-namespace \
   -f throwaway-regtest.yaml
 ```
@@ -152,7 +152,7 @@ The simplest install uses the defaults — a **mainnet Bitcoin Knots** node with
 
 ```bash
 helm install btc oci://ghcr.io/docked-titan-foundation/bitcoin-stack \
-  --version 1.0.0-beta.7 \
+  --version <version> \
   --namespace bitcoin --create-namespace
 ```
 
@@ -184,7 +184,7 @@ mining-pool:
 
 ```bash
 helm install btc oci://ghcr.io/docked-titan-foundation/bitcoin-stack \
-  --version 1.0.0-beta.7 \
+  --version <version> \
   --namespace bitcoin --create-namespace \
   -f my-values.yaml
 ```
@@ -393,21 +393,6 @@ Pre-releases carry a `-beta.N` suffix.
 
 | Chart | Knots | Core | Pool | Date |
 |---|---|---|---|---|
-| 1.0.0-beta.7 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-21 |
-
-<details>
-<summary>Older releases</summary>
-
-| Chart | Knots | Core | Pool | Date |
-|---|---|---|---|---|
-| 1.0.0-beta.6 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-21 |
-| 1.0.0-beta.5 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-20 |
-| 1.0.0-beta.4 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
-| 1.0.0-beta.3 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
-| 1.0.0-beta.2 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
-| 1.0.0-beta.1 | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-19 |
-
-</details>
 
 ## 🧰 Development
 
