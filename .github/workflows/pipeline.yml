@@ -1,6 +1,16 @@
 ---
 name: CI_CD
 
+# Order matters here: NOTHING is tagged, released, or committed back until the
+# chart has been built, validated, published by digest, and signed. semantic-release
+# runs twice — once as a side-effect-free `--dry-run` up front (job `detect`) purely
+# to decide whether a release is pending and what its version is, and once for real
+# at the very end (job `release`) to create the tag, the commit-back and the GitHub
+# release. If any gate in between fails, no release is ever created — no phantom
+# tags, no orphan GitHub releases, no version commit for an artifact that does not
+# exist. The heavy build only runs when `detect` says a release is actually pending
+# (or a published chart needs re-signing).
+
 on:
   workflow_dispatch:
     inputs:
@@ -55,22 +65,29 @@ jobs:
             npx commitlint --from "$FROM_SHA" --to "${{ github.sha }}" --verbose
           fi
 
-  # ─── GATE 2: Release ─────────────────────────────────────────────────────────
-  release:
+  # ─── GATE 2: Detect — decide, with NO side effects ───────────────────────────
+  # A dry-run of semantic-release computes the next version and whether a release
+  # is pending, without tagging, committing, or publishing anything. If no release
+  # is pending, we still self-heal: rebuild the latest chart when it has lost its
+  # signature or SBOM attestation.
+  detect:
     needs: lint
     if: >-
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta') &&
       !contains(github.actor, 'github-actions[bot]')
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-      packages: write
-      id-token: write
+      contents: read
+      packages: read
     outputs:
-      new_release_published: ${{ steps.final-status.outputs.new_release_published }}
-      new_release_version: ${{ steps.final-status.outputs.new_release_version }}
+      # 'true' only when a genuinely new release is pending.
+      is_release: ${{ steps.status.outputs.is_release }}
+      # 'true' when there is something to build: a new release, or a re-sign.
+      should_build: ${{ steps.status.outputs.should_build }}
+      # The version to build/publish (next release, or the one being re-signed).
+      version: ${{ steps.status.outputs.version }}
+      # The git ref the build job checks out.
+      build_ref: ${{ steps.status.outputs.build_ref }}
     steps:
       - uses: actions/create-github-app-token@v3
         id: generate_token
@@ -87,58 +104,38 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Import the release bot's GPG key
-        env:
-          TITAN_RELEASER_BASE64_GPG_KEY: ${{ secrets.TITAN_RELEASER_BASE64_GPG_KEY }}
-        run: |
-          echo -n "$TITAN_RELEASER_BASE64_GPG_KEY" | base64 --decode | gpg --batch --import
-
-      - name: Configure signed commits
-        env:
-          TITAN_RELEASER_GPG_KEY_ID: ${{ secrets.TITAN_RELEASER_GPG_KEY_ID }}
-        run: |
-          cat > /tmp/gpg.sh <<'EOF'
-          #!/bin/bash
-          gpg --batch --pinentry-mode loopback \
-              --passphrase "$TITAN_RELEASER_GPG_PASSPHRASE" "$@"
-          EOF
-          chmod +x /tmp/gpg.sh
-          git config commit.gpgsign true
-          git config user.signingkey "$TITAN_RELEASER_GPG_KEY_ID"
-          git config gpg.program /tmp/gpg.sh
-
       - run: npm install
 
-      - name: semantic-release
-        id: semantic
+      - name: semantic-release (dry-run) — next version only, no side effects
+        id: dryrun
         env:
-          TITAN_RELEASER_GPG_PASSPHRASE: ${{ secrets.TITAN_RELEASER_GPG_PASSPHRASE }}
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
-          GIT_AUTHOR_NAME: s-release[bot]
-          GIT_AUTHOR_EMAIL: ${{ secrets.TITAN_RELEASER_EMAIL }}
-          GIT_COMMITTER_NAME: s-release[bot]
-          GIT_COMMITTER_EMAIL: ${{ secrets.TITAN_RELEASER_EMAIL }}
         run: |
-          # pipefail so semantic-release's exit code is not swallowed by tee — a
-          # failed release must fail this job, not sail through as a green run
-          # with new_release_published=false.
           set -o pipefail
-          npx semantic-release 2>&1 | tee /tmp/semantic-output.txt
-          VERSION=$(grep -oP 'Published release \K[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' \
-            /tmp/semantic-output.txt || echo "")
+          npx semantic-release --dry-run 2>&1 | tee /tmp/dry.txt
+          VERSION=$(grep -oP 'next release version is \K[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' \
+            /tmp/dry.txt | head -1 || echo "")
           if [ -n "$VERSION" ]; then
-            echo "new_release_published=true" >> "$GITHUB_OUTPUT"
-            echo "new_release_version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           else
-            echo "new_release_published=false" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: azure/setup-helm@v4
+        if: steps.dryrun.outputs.is_release != 'true'
+        with:
+          version: v3.19.0
+
+      - uses: sigstore/cosign-installer@v3
+        if: steps.dryrun.outputs.is_release != 'true'
 
       # Self-healing: if the latest published chart is missing a signature or an
       # SBOM attestation, rebuild it even though no new release was cut. An
       # unsigned artifact must never be left sitting in the registry.
       - name: Verify the published chart is still signed and attested
         id: verify-existing
-        if: steps.semantic.outputs.new_release_published != 'true'
+        if: steps.dryrun.outputs.is_release != 'true'
         continue-on-error: true
         run: |
           LATEST=$(git tag --sort=-v:refname | grep -v -- '-' | head -1 | sed 's/^v//')
@@ -161,38 +158,44 @@ jobs:
             echo "rebuild_version=${LATEST}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: sigstore/cosign-installer@v3
-        if: steps.semantic.outputs.new_release_published != 'true'
-
-      - name: Final status
-        id: final-status
+      - name: Status
+        id: status
         run: |
-          if [ "${{ steps.semantic.outputs.new_release_published }}" = "true" ]; then
-            echo "new_release_published=true" >> "$GITHUB_OUTPUT"
-            echo "new_release_version=${{ steps.semantic.outputs.new_release_version }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.dryrun.outputs.is_release }}" = "true" ]; then
+            echo "is_release=true"    >> "$GITHUB_OUTPUT"
+            echo "should_build=true"  >> "$GITHUB_OUTPUT"
+            echo "version=${{ steps.dryrun.outputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "build_ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ steps.verify-existing.outputs.rebuild }}" = "true" ]; then
-            echo "new_release_published=true" >> "$GITHUB_OUTPUT"
-            echo "new_release_version=${{ steps.verify-existing.outputs.rebuild_version }}" >> "$GITHUB_OUTPUT"
+            echo "is_release=false"   >> "$GITHUB_OUTPUT"
+            echo "should_build=true"  >> "$GITHUB_OUTPUT"
+            echo "version=${{ steps.verify-existing.outputs.rebuild_version }}" >> "$GITHUB_OUTPUT"
+            echo "build_ref=v${{ steps.verify-existing.outputs.rebuild_version }}" >> "$GITHUB_OUTPUT"
           else
-            echo "new_release_published=false" >> "$GITHUB_OUTPUT"
+            echo "is_release=false"   >> "$GITHUB_OUTPUT"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # ─── GATE 3-6: Package, test, scan, SBOM ─────────────────────────────────────
+  # ─── GATE 3-8: Package, validate, publish by digest, SBOM ────────────────────
+  # Everything the release depends on happens here, BEFORE anything is tagged.
   build:
-    needs: release
-    if: needs.release.result == 'success' && needs.release.outputs.new_release_published == 'true'
+    needs: detect
+    if: needs.detect.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
       id-token: write
       security-events: write
     outputs:
       chart_digest: ${{ steps.push.outputs.digest }}
+      version: ${{ needs.detect.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: v${{ needs.release.outputs.new_release_version }}
+          # A new release builds the pushed commit; a self-heal rebuild builds the
+          # already-tagged commit of the version being re-signed (see detect.build_ref).
+          ref: ${{ needs.detect.outputs.build_ref }}
           fetch-depth: 0
 
       - uses: azure/setup-helm@v4
@@ -204,10 +207,17 @@ jobs:
           curl -sL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
             | tar xz -C /usr/local/bin kubeconform
 
+      # For a new release the working tree still carries the previous version, so
+      # apply the release version to the charts (and the umbrella's dependency
+      # pins) before packaging. A rebuild's tag is already at its version.
+      - name: Set the chart version
+        if: needs.detect.outputs.is_release == 'true'
+        run: ./scripts/update-versions.sh "${{ needs.detect.outputs.version }}"
+
       # GATE 3: package
       - name: Package the charts
         env:
-          VERSION: v${{ needs.release.outputs.new_release_version }}
+          VERSION: v${{ needs.detect.outputs.version }}
         run: ./scripts/build.sh
 
       # GATE 4: the values matrix must render, be valid Kubernetes, be hardened,
@@ -257,7 +267,8 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy-charts
 
-      # GATE 7: publish
+      # GATE 7: publish, by digest. This happens BEFORE the git tag — the artifact
+      # is real before the release that points at it exists.
       - name: Log in to ghcr
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
@@ -266,7 +277,7 @@ jobs:
       - name: Push the chart and capture its digest
         id: push
         env:
-          VERSION: ${{ needs.release.outputs.new_release_version }}
+          VERSION: ${{ needs.detect.outputs.version }}
         run: |
           # Only the umbrella is published: it carries the other two inside it.
           # Everything downstream signs the DIGEST, never the tag.
@@ -292,15 +303,16 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: sbom-${{ needs.release.outputs.new_release_version }}
+          name: sbom-${{ needs.detect.outputs.version }}
           path: sbom.spdx.json
 
   # ─── GATE 9: Provenance ──────────────────────────────────────────────────────
   attest:
-    needs: [release, build]
+    needs: [detect, build]
+    if: needs.detect.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       attestations: write
       id-token: write
       artifact-metadata: write
@@ -322,7 +334,8 @@ jobs:
 
   # ─── GATE 10: Signature ──────────────────────────────────────────────────────
   sign:
-    needs: [release, build, attest]
+    needs: [detect, build, attest]
+    if: needs.detect.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -346,7 +359,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: sbom-${{ needs.release.outputs.new_release_version }}
+          name: sbom-${{ needs.detect.outputs.version }}
 
       - name: Attest the SBOM
         run: |
@@ -354,3 +367,77 @@ jobs:
             --predicate sbom.spdx.json \
             --type spdxjson \
             "${CHART_REGISTRY}/bitcoin-stack@${{ needs.build.outputs.chart_digest }}"
+
+  # ─── GATE 11: Release — tag, commit, GitHub release. LAST, and only for real. ─
+  # The chart is already built, published by digest, and signed by the time this
+  # runs. semantic-release now creates the tag, the version commit-back and the
+  # GitHub release. If everything above failed, this never runs — so a tag/release
+  # only ever exists for an artifact that actually shipped. Skipped on a self-heal
+  # rebuild (nothing new to release).
+  release:
+    needs: [detect, build, attest, sign]
+    if: needs.detect.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: generate_token
+        with:
+          client-id: ${{ secrets.TITAN_RELEASER_ID }}
+          private-key: ${{ secrets.TITAN_RELEASER_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Import the release bot's GPG key
+        env:
+          TITAN_RELEASER_BASE64_GPG_KEY: ${{ secrets.TITAN_RELEASER_BASE64_GPG_KEY }}
+        run: |
+          echo -n "$TITAN_RELEASER_BASE64_GPG_KEY" | base64 --decode | gpg --batch --import
+
+      - name: Configure signed commits
+        env:
+          TITAN_RELEASER_GPG_KEY_ID: ${{ secrets.TITAN_RELEASER_GPG_KEY_ID }}
+        run: |
+          cat > /tmp/gpg.sh <<'EOF'
+          #!/bin/bash
+          gpg --batch --pinentry-mode loopback \
+              --passphrase "$TITAN_RELEASER_GPG_PASSPHRASE" "$@"
+          EOF
+          chmod +x /tmp/gpg.sh
+          git config commit.gpgsign true
+          git config user.signingkey "$TITAN_RELEASER_GPG_KEY_ID"
+          git config gpg.program /tmp/gpg.sh
+
+      - run: npm install
+
+      - name: semantic-release
+        env:
+          TITAN_RELEASER_GPG_PASSPHRASE: ${{ secrets.TITAN_RELEASER_GPG_PASSPHRASE }}
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          GIT_AUTHOR_NAME: s-release[bot]
+          GIT_AUTHOR_EMAIL: ${{ secrets.TITAN_RELEASER_EMAIL }}
+          GIT_COMMITTER_NAME: s-release[bot]
+          GIT_COMMITTER_EMAIL: ${{ secrets.TITAN_RELEASER_EMAIL }}
+        run: |
+          # The dry-run in `detect` already proved a release is pending; this run
+          # makes it official (tag + commit-back + GitHub release). A mismatch
+          # would mean the commit set changed under us — fail loudly rather than
+          # tag something unexpected.
+          set -o pipefail
+          npx semantic-release 2>&1 | tee /tmp/semantic-output.txt
+          if ! grep -q 'Published release' /tmp/semantic-output.txt; then
+            echo "::error::detect expected a release but semantic-release published none"
+            exit 1
+          fi
