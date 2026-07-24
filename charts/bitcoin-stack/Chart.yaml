@@ -2,8 +2,8 @@ apiVersion: v2
 name: bitcoin-stack
 description: A hardened Bitcoin node (Knots or Core) plus mining pool (public-pool or ckpool), in one command.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 1.0.0-beta.1
+appVersion: "1.0.0-beta.1"
 kubeVersion: ">=1.25.0-0"
 keywords:
   - bitcoin
@@ -21,11 +21,11 @@ maintainers:
     url: https://github.com/docked-titan-foundation
 dependencies:
   - name: bitcoin-node
-    version: 0.1.0
+    version: 1.0.0-beta.1
     repository: file://../bitcoin-node
     condition: bitcoin-node.enabled
   - name: mining-pool
-    version: 0.1.0
+    version: 1.0.0-beta.1
     repository: file://../mining-pool
     condition: mining-pool.enabled
 annotations:

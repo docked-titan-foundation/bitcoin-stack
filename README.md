@@ -393,6 +393,7 @@ Pre-releases carry a `-beta.N` suffix.
 
 | Chart | Knots | Core | Pool | Date |
 |---|---|---|---|---|
+| 1.0.0-beta.1 (latest) | 29.3.knots20260508 | 31.1 | public-pool | 2026-07-24 |
 
 ## 🧰 Development
 
