@@ -129,7 +129,7 @@ check_guard "a custom image without a digest is refused" \
 
 check_guard "ckpool with an unpinned image is refused" \
   "not pinned by digest" \
-  render --set mining-pool.pool.implementation=ckpool
+  render --set mining-pool.pool.implementation=ckpool --set mining-pool.pool.ckpool.image.digest=""
 
 check_guard "a pool on the wrong network is refused" \
   "but the pool is configured for" \
