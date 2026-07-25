@@ -1,15 +1,24 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:base"],
+  "extends": ["config:recommended"],
   "baseBranches": ["beta"],
+  "dependencyDashboard": true,
   "labels": ["dependencies"],
   "reviewers": ["albertoig"],
   "assignees": ["albertoig"],
   "prConcurrentLimit": 10,
   "minimumReleaseAge": "3 days",
-  "schedule": ["after 9am and before 5pm on weekdays"],
   "semanticCommits": "enabled",
   "packageRules": [
+    {
+      "description": "The image pins in these two files belong to the custom regex managers below, which move tag and digest together. Renovate's built-in helm-values manager finds the same repository/tag pairs and would raise a second PR bumping the tag alone — leaving a tag that disagrees with the digest, which the charts refuse to render.",
+      "matchManagers": ["helm-values"],
+      "matchFileNames": [
+        "charts/bitcoin-node/values.yaml",
+        "charts/mining-pool/values.yaml"
+      ],
+      "enabled": false
+    },
     {
       "matchManagers": ["github-actions"],
       "semanticCommitType": "chore",
@@ -36,7 +45,10 @@
     {
       "description": "The pool builds the coinbase output that pays out a found block. Never auto-merged.",
       "matchManagers": ["custom.regex"],
-      "matchDepNames": ["docked-titan-foundation/public-pool"],
+      "matchDepNames": [
+        "docked-titan-foundation/public-pool",
+        "docked-titan-foundation/ckpool"
+      ],
       "semanticCommitType": "fix",
       "semanticCommitScope": "pool",
       "addLabels": ["upstream", "review-required"],
@@ -46,20 +58,20 @@
   ],
   "customManagers": [
     {
-      "description": "Node images are pinned by digest in values.yaml — tags alone are not a supply-chain guarantee.",
+      "description": "Node images (Knots and Core) are pinned by digest in values.yaml — tags alone are not a supply-chain guarantee.",
       "customType": "regex",
-      "fileMatch": ["^charts/bitcoin-node/values\\.yaml$"],
+      "managerFilePatterns": ["charts/bitcoin-node/values.yaml"],
       "matchStrings": [
         "repository:\\s+(?<depName>bitcoinknots/bitcoin|bitcoin/bitcoin)\\s+tag:\\s+\"(?<currentValue>[^\"]+)\"\\s+digest:\\s+\"(?<currentDigest>sha256:[a-f0-9]{64})\""
       ],
       "datasourceTemplate": "docker"
     },
     {
-      "description": "The pool image, likewise pinned by digest.",
+      "description": "The pool images — public-pool and ckpool — likewise pinned by digest. Both are matched: the chart can be deployed with either.",
       "customType": "regex",
-      "fileMatch": ["^charts/mining-pool/values\\.yaml$"],
+      "managerFilePatterns": ["charts/mining-pool/values.yaml"],
       "matchStrings": [
-        "repository:\\s+ghcr\\.io/(?<depName>docked-titan-foundation/public-pool)\\s+tag:\\s+\"(?<currentValue>[^\"]+)\"\\s+digest:\\s+\"(?<currentDigest>sha256:[a-f0-9]{64})\""
+        "repository:\\s+ghcr\\.io/(?<depName>docked-titan-foundation/(?:public-pool|ckpool))\\s+tag:\\s+\"(?<currentValue>[^\"]+)\"\\s+digest:\\s+\"(?<currentDigest>sha256:[a-f0-9]{64})\""
       ],
       "registryUrlTemplate": "https://ghcr.io",
       "datasourceTemplate": "docker"

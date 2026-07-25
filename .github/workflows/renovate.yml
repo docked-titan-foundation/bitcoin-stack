@@ -1,0 +1,84 @@
+name: Renovate
+
+# Self-hosted Renovate. The Mend-hosted Renovate app is not installed on this org,
+# so we run the same engine ourselves on a schedule. It reuses the existing
+# renovate.json unchanged and opens dependency PRs against `beta`, which is this
+# repo's prerelease channel (see .releaserc) — `main` carries stable releases, and
+# a bump reaches it by promoting beta, not by a direct PR.
+#
+# What it keeps current, beyond the usual github-actions and npm updates: the four
+# container images this stack pins by digest — the ckpool and public-pool images in
+# charts/mining-pool/values.yaml, and the Knots and Core node images in
+# charts/bitcoin-node/values.yaml. Those are matched by the custom regex managers in
+# renovate.json, which is why the repository/tag/digest lines in those files carry a
+# "do not reformat" comment.
+#
+# Runs under a dedicated GitHub App bot. The workflow mints a short-lived
+# installation token from two secrets:
+#   RENOVATE_BOT_ID          — the GitHub App's Client ID (its numeric App ID also
+#                              works; GitHub accepts either as the JWT issuer)
+#   RENOVATE_BOT_PRIVATE_KEY — the full .pem private key contents
+# With RENOVATE_PLATFORM_COMMIT enabled, Renovate commits through the GitHub API, so
+# GitHub auto-signs the commits ("Verified") with no GPG keys to manage. The default
+# GITHUB_TOKEN is intentionally NOT used: PRs it opens cannot trigger the validate
+# workflow, and it cannot manage the Dependency Dashboard issue.
+
+on:
+  schedule:
+    # Wake Renovate hourly on weekdays (UTC). Whether it actually opens PRs is
+    # gated by renovate.json, so this only controls how often it checks.
+    - cron: '0 * * * 1-5'  # Hourly, Monday–Friday, UTC
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: Log level
+        type: choice
+        default: info
+        options:
+          - debug
+          - info
+          - warn
+      dryRun:
+        description: Dry run (compute updates but write no branches or PRs)
+        type: boolean
+        default: false
+
+concurrency:
+  # Never let two Renovate runs overlap on the same repo.
+  group: renovate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    name: Renovate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Generate Renovate bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RENOVATE_BOT_ID }}
+          private-key: ${{ secrets.RENOVATE_BOT_PRIVATE_KEY }}
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@v46.1.20
+        with:
+          configurationFile: renovate.json
+          token: ${{ steps.bot-token.outputs.token }}
+        env:
+          # Restrict to this repo (no org-wide autodiscovery).
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Commit via the GitHub API so commits are auto-signed → "Verified".
+          RENOVATE_PLATFORM_COMMIT: "enabled"
+          RENOVATE_GIT_AUTHOR: "dependency-bot-ai <302342843+dependency-bot-ai@users.noreply.github.com>"
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          # Empty string on scheduled runs = live; "full" only on a manual dry run.
+          RENOVATE_DRY_RUN: ${{ inputs.dryRun && 'full' || '' }}
