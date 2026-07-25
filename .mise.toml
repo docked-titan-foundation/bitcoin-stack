@@ -3,7 +3,7 @@
 node          = "24"
 
 # Chart toolchain
-helm          = "3.19.0"
+helm          = "3.21.3"
 kubectl       = "1.34.1"
 # Backend-qualified: mise's short-name registry no longer maps bare
 # `chart-testing`. This provides the `ct` binary the lint tasks call.
