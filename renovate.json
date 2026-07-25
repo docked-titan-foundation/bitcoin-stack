@@ -31,7 +31,7 @@
       "addLabels": ["upstream", "review-required"],
       "automerge": false,
       "minimumReleaseAge": "7 days",
-      "commitBody": "Bitcoin node image bump. Review before merging: this is consensus-critical code, and downgrading across a major version requires a reindex."
+      "commitBody": "Bitcoin node image bump. Review before merging: this is consensus-critical\ncode, and downgrading across a major version requires a reindex."
     },
     {
       "description": "The pool builds the coinbase output that pays out a found block. Never auto-merged.",
