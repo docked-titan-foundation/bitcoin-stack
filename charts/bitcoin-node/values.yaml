@@ -100,15 +100,24 @@ image:
   pullPolicy: IfNotPresent
 
 # ── RPC (JSON-RPC / bitcoin-cli) ───────────────────────────────────────────────
-# Reachable ONLY on the in-cluster ClusterIP Service. Do not expose it publicly:
-# it is plain HTTP and it is a full-control interface to the node.
+# The Service is ClusterIP and stays ClusterIP. RPC is a full-control interface
+# to the node — it can stop the process, and move coins if a wallet is loaded —
+# authenticated with HTTP Basic, which means the password crosses the wire on
+# every call.
+#
+# It CAN be published under a hostname with TLS via `networking.rpc` below, but
+# only deliberately: that path refuses to render until you have narrowed
+# allowSubnet and given it a certificate. Prefer publishing the pool's read-only
+# stats API instead if that is what you actually want.
 rpc:
   enabled: true
   username: bitcoin
   port: 8332
   # rpcallowip subnet permitted to reach the RPC port. Because the Service is
   # ClusterIP-only, the broad default just needs to cover the pod network — and
-  # it is only safe for exactly as long as that stays true.
+  # it is only safe for exactly as long as that stays true. Publishing RPC makes
+  # it untrue, which is why `networking.rpc` refuses to render while this is
+  # still 0.0.0.0/0.
   allowSubnet: 0.0.0.0/0
 
 # ── ZMQ (block notifications) ──────────────────────────────────────────────────
@@ -129,6 +138,89 @@ p2p:
     # you give back to the network rather than only taking from it.
     type: ClusterIP
     loadBalancerIP: ""
+
+# ── Hostnames and certificates ─────────────────────────────────────────────────
+# Off by default: every endpoint below starts with an empty `scopes` list, and an
+# empty list means "not published". Nothing here renders until you opt in.
+#
+# HOW a name is published lives in `global.networking.scopes` — one map, shared
+# by every chart in the release, so the domain and the issuers are written once.
+# WHAT is published lives here, as a list of scope names per endpoint. Publishing
+# something in two places at once is just a two-element list.
+#
+# Whether an endpoint gets an Ingress or only a DNS record is not a setting: it
+# follows from the protocol. RPC is HTTP and can terminate TLS behind an Ingress.
+# P2P is a raw TCP stream with no Host header and no SNI, so an ingress
+# controller has nothing to route on — it gets a name pointing at its
+# LoadBalancer address, and no certificate.
+#
+# The chart emits annotations. It does not install cert-manager or external-dns,
+# and does not check that they are running.
+networking:
+  # A stable name for the address peers connect to, so it survives the
+  # LoadBalancer IP changing. Requires p2p.service.type to be LoadBalancer or
+  # NodePort — there is nothing to publish about a ClusterIP.
+  #
+  # If you give P2P a public name you will usually also want bitcoind to
+  # announce it, which this chart does not do for you:
+  #   node.extraConfig: ["externalip=node.example.com"]
+  p2p:
+    scopes: []
+    name: node
+    # Override the derived hostname for one scope:
+    #   hosts: {external: node.example.net}
+    hosts: {}
+
+  # DANGEROUS. Read the note on `rpc` above first.
+  #
+  # Refuses to render unless rpc.allowSubnet has been narrowed away from
+  # 0.0.0.0/0 and every listed scope resolves a certificate. There is no
+  # plaintext RPC Ingress in this chart, on any scope.
+  rpc:
+    scopes: []
+    name: rpc
+    hosts: {}
+    # Bring your own certificate instead of issuing one, per scope:
+    #   tlsSecrets: {internal: my-existing-tls-secret}
+    tlsSecrets: {}
+    # Ingress class. Empty uses the cluster's default IngressClass.
+    className: ""
+    # Extra annotations, merged over the generated ones.
+    annotations: {}
+
+# ── Scopes: how a name gets published ──────────────────────────────────────────
+# Under the umbrella chart this is set once at the top level and both subcharts
+# read it. The defaults here exist so this chart also works installed on its own.
+#
+# `internal` and `external` are ordinary entries, not special names — rename
+# them, drop one, or add a third.
+global:
+  networking:
+    # The domain hostnames are derived from. Required once anything is published.
+    baseDomain: ""
+
+    scopes:
+      # A name that resolves on the LAN only. Note that this does NOT imply a
+      # self-signed certificate: an ACME issuer solving DNS-01 will issue a
+      # publicly-trusted cert for a host that resolves nowhere on the internet,
+      # because DNS-01 never connects to the endpoint.
+      internal:
+        subdomain: internal          # -> rpc.internal.example.com
+        issuer: ""                   # cert-manager issuer; empty = no cert issued
+        issuerKind: ClusterIssuer    # ClusterIssuer | Issuer
+        publishDns: false            # let external-dns create the record
+        ttl: "300"
+        annotations: {}              # provider extras, added to Ingresses only
+
+      external:
+        subdomain: ""                # -> rpc.example.com
+        issuer: ""
+        issuerKind: ClusterIssuer
+        publishDns: false
+        ttl: "300"
+        # Provider-specific options go here, e.g. for Cloudflare:
+        #   external-dns.alpha.kubernetes.io/cloudflare-proxied: "false"
+        annotations: {}
 
 # ── The RPC credential ─────────────────────────────────────────────────────────
 # Three ways to get it, none of which is "write it in values.yaml":

@@ -35,6 +35,15 @@ metadata:
   name: {{ include "bitcoin-node.p2p.name" . }}
   labels:
     {{- include "bitcoin-node.labels" . | nindent 4 }}
+  {{- /* P2P is a raw TCP stream — no Host header, no SNI — so an ingress
+         controller has nothing to route it on. Publishing it means one thing:
+         a DNS record pointing at this Service's address. All scopes share the
+         one annotation; external-dns reads a comma-separated list. */ -}}
+  {{- $ann := include "bitcoin-node.networking.serviceAnnotations" (dict "ctx" . "endpoint" (dig "p2p" dict (.Values.networking | default dict))) }}
+  {{- if $ann }}
+  annotations:
+    {{- $ann | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.p2p.service.type }}
   {{- if and (eq .Values.p2p.service.type "LoadBalancer") .Values.p2p.service.loadBalancerIP }}

@@ -90,6 +90,50 @@ check "custom node image (BYO, digest pinned)"  validate --set bitcoin-node.node
 check "pool wait-for-sync disabled"        validate --set mining-pool.bitcoin.waitForSync.enabled=false
 check "node RPC secret via externalSecret" validate --set bitcoin-node.secret.provider=externalSecret
 
+# Publishing endpoints under hostnames. NET_* are the building blocks: a domain,
+# then whichever scopes the case needs.
+NET_BASE=(--set global.networking.baseDomain=example.com)
+NET_INTERNAL=(--set global.networking.scopes.internal.publishDns=true
+              --set global.networking.scopes.internal.issuer=internal-ca)
+NET_EXTERNAL=(--set global.networking.scopes.external.publishDns=true
+              --set global.networking.scopes.external.issuer=letsencrypt-prod)
+NET_LB=(--set bitcoin-node.p2p.service.type=LoadBalancer)
+
+check "networking: pool API, one scope" \
+  validate "${NET_BASE[@]}" "${NET_INTERNAL[@]}" --set mining-pool.networking.api.scopes='{internal}'
+check "networking: pool API, both scopes, different issuers" \
+  validate "${NET_BASE[@]}" "${NET_INTERNAL[@]}" "${NET_EXTERNAL[@]}" \
+    --set mining-pool.networking.api.scopes='{internal,external}'
+check "networking: stratum + P2P records" \
+  validate "${NET_BASE[@]}" "${NET_INTERNAL[@]}" "${NET_LB[@]}" \
+    --set mining-pool.networking.stratum.scopes='{internal}' \
+    --set bitcoin-node.networking.p2p.scopes='{internal}'
+check "networking: pool API without TLS (plain HTTP on a LAN)" \
+  validate "${NET_BASE[@]}" --set global.networking.scopes.internal.publishDns=true \
+    --set mining-pool.networking.api.scopes='{internal}'
+check "networking: bring-your-own TLS secret" \
+  validate "${NET_BASE[@]}" --set global.networking.scopes.internal.publishDns=true \
+    --set mining-pool.networking.api.tlsSecrets.internal=my-cert \
+    --set mining-pool.networking.api.scopes='{internal}'
+check "networking: a renamed scope is just a map key" \
+  validate --set global.networking.baseDomain=example.com \
+    --set global.networking.scopes.lan.subdomain=lan \
+    --set global.networking.scopes.lan.publishDns=true \
+    --set global.networking.scopes.lan.issuer=internal-ca \
+    --set mining-pool.networking.api.scopes='{lan}'
+check "networking: explicit host override, no baseDomain" \
+  validate --set global.networking.scopes.internal.publishDns=true \
+    --set global.networking.scopes.internal.issuer=internal-ca \
+    --set mining-pool.networking.api.hosts.internal=stats.example.net \
+    --set mining-pool.networking.api.scopes='{internal}'
+check "networking: node published, pool not (asymmetric)" \
+  validate "${NET_BASE[@]}" "${NET_INTERNAL[@]}" "${NET_LB[@]}" \
+    --set bitcoin-node.networking.p2p.scopes='{internal}'
+check "networking: RPC published, deliberately" \
+  validate "${NET_BASE[@]}" "${NET_INTERNAL[@]}" \
+    --set bitcoin-node.rpc.allowSubnet=10.42.0.0/16 \
+    --set bitcoin-node.networking.rpc.scopes='{internal}'
+
 hr
 echo "🔒 Hardening assertions on the rendered output"
 hr
@@ -142,6 +186,143 @@ check_guard "a pool with no node to mine on is refused" \
 check_guard "disabling both subcharts is refused" \
   "there is nothing to install" \
   render --set bitcoin-node.enabled=false --set mining-pool.enabled=false
+
+check_guard "an unknown scope name is refused" \
+  "unknown scope 'typo'" \
+  render --set global.networking.baseDomain=example.com \
+    --set mining-pool.networking.api.scopes='{typo}'
+
+check_guard "publishing with no baseDomain and no explicit host is refused" \
+  "baseDomain" \
+  render --set global.networking.scopes.internal.publishDns=true \
+    --set mining-pool.networking.api.scopes='{internal}'
+
+check_guard "a raw-TCP endpoint in a scope that publishes no record is refused" \
+  "no scope in that list has publishDns" \
+  render --set global.networking.baseDomain=example.com \
+    --set mining-pool.networking.stratum.scopes='{internal}'
+
+check_guard "publishing stratum from a ClusterIP is refused" \
+  "stratum.service.type is ClusterIP" \
+  render --set global.networking.baseDomain=example.com \
+    --set global.networking.scopes.internal.publishDns=true \
+    --set mining-pool.stratum.service.type=ClusterIP \
+    --set mining-pool.networking.stratum.scopes='{internal}'
+
+check_guard "publishing P2P from a ClusterIP is refused" \
+  "p2p.service.type is ClusterIP" \
+  render --set global.networking.baseDomain=example.com \
+    --set global.networking.scopes.internal.publishDns=true \
+    --set bitcoin-node.networking.p2p.scopes='{internal}'
+
+check_guard "the pool API under ckpool is refused" \
+  "pool.implementation is 'ckpool'" \
+  render --set global.networking.baseDomain=example.com \
+    --set global.networking.scopes.internal.publishDns=true \
+    --set mining-pool.pool.implementation=ckpool \
+    --set mining-pool.pool.ckpool.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+    --set mining-pool.networking.api.scopes='{internal}'
+
+check_guard "publishing ZMQ is refused" \
+  "networking.zmq is not supported" \
+  render --set bitcoin-node.networking.zmq.scopes='{internal}'
+
+# ── The RPC guards. This is the endpoint that can lose someone their node. ─────
+check_guard "publishing RPC with allowSubnet still 0.0.0.0/0 is refused" \
+  "allowSubnet is still 0.0.0.0/0" \
+  render --set global.networking.baseDomain=example.com \
+    --set global.networking.scopes.internal.issuer=internal-ca \
+    --set bitcoin-node.networking.rpc.scopes='{internal}'
+
+check_guard "publishing RPC without TLS is refused" \
+  "resolves no TLS" \
+  render --set global.networking.baseDomain=example.com \
+    --set bitcoin-node.rpc.allowSubnet=10.42.0.0/16 \
+    --set bitcoin-node.networking.rpc.scopes='{internal}'
+
+check_guard "publishing RPC without TLS is refused on every scope, not just one" \
+  "resolves no TLS" \
+  render --set global.networking.baseDomain=example.com \
+    --set global.networking.scopes.internal.issuer=internal-ca \
+    --set bitcoin-node.rpc.allowSubnet=10.42.0.0/16 \
+    --set bitcoin-node.networking.rpc.scopes='{internal,external}'
+
+hr
+echo "🌐 Hostnames: what the rendered objects actually say"
+hr
+
+# Two scopes must produce two Ingresses that share nothing: not the object name,
+# not the issuer, and above all not the TLS Secret — one Secret written by two
+# issuers means they overwrite each other's certificate forever.
+assert_two_scopes() {
+  local out
+  out="$(render "${NET_BASE[@]}" "${NET_INTERNAL[@]}" "${NET_EXTERNAL[@]}" \
+    --set mining-pool.networking.api.scopes='{internal,external}')"
+
+  [ "$(grep -c 'kind: Ingress' <<<"$out")" = "2" ] || { echo "expected exactly 2 Ingresses"; return 1; }
+  grep -q 'name: mining-pool-api-internal' <<<"$out" || { echo "missing internal Ingress"; return 1; }
+  grep -q 'name: mining-pool-api-external' <<<"$out" || { echo "missing external Ingress"; return 1; }
+  grep -q 'cluster-issuer: "internal-ca"' <<<"$out" || { echo "internal issuer missing"; return 1; }
+  grep -q 'cluster-issuer: "letsencrypt-prod"' <<<"$out" || { echo "external issuer missing"; return 1; }
+
+  local secrets
+  secrets="$(grep 'secretName:' <<<"$out" | grep -c 'tls')"
+  [ "$secrets" = "2" ] || { echo "expected 2 distinct TLS secrets, got ${secrets}"; return 1; }
+  [ "$(grep 'secretName:.*tls' <<<"$out" | sort -u | wc -l)" = "2" ] || { echo "the two scopes share a TLS Secret"; return 1; }
+}
+
+# A raw TCP Service gets ONE annotation carrying every hostname, and must never
+# get the HTTP-proxy options a scope may define — they cannot apply to a stream
+# an ingress controller never sees.
+assert_tcp_record() {
+  local out
+  out="$(render "${NET_BASE[@]}" \
+    --set global.networking.scopes.internal.publishDns=true \
+    --set global.networking.scopes.external.publishDns=true \
+    --set-string 'global.networking.scopes.external.annotations.external-dns\.alpha\.kubernetes\.io/cloudflare-proxied=false' \
+    --set mining-pool.networking.stratum.scopes='{internal,external}')"
+
+  grep -q 'hostname: "stratum.internal.example.com,stratum.example.com"' <<<"$out" \
+    || { echo "both hostnames not on one annotation"; return 1; }
+  grep -q 'kind: Ingress' <<<"$out" && { echo "stratum produced an Ingress"; return 1; }
+  grep -q 'cloudflare-proxied' <<<"$out" && { echo "an HTTP proxy option reached a TCP Service"; return 1; }
+  return 0
+}
+
+# The whole feature is opt-in. With nothing published there must be no Ingress
+# and no external-dns annotation anywhere in the output.
+assert_inert_by_default() {
+  local out
+  out="$(render)"
+  grep -q 'kind: Ingress' <<<"$out" && { echo "an Ingress rendered by default"; return 1; }
+  grep -q 'external-dns' <<<"$out" && { echo "an external-dns annotation rendered by default"; return 1; }
+  grep -q 'cert-manager' <<<"$out" && { echo "a cert-manager annotation rendered by default"; return 1; }
+  return 0
+}
+
+check "default: nothing published, no Ingress, no annotations" assert_inert_by_default
+check "two scopes: two Ingresses, two issuers, two TLS secrets"  assert_two_scopes
+check "raw TCP: one record annotation, no Ingress, no proxy flag" assert_tcp_record
+
+hr
+echo "📦 The subcharts still stand alone"
+hr
+
+# Both subcharts are installable on their own, so the scope map has to resolve
+# from their own values too — not only when merged from the umbrella.
+check "bitcoin-node standalone, P2P published" \
+  helm template bn charts/bitcoin-node \
+    --set global.networking.baseDomain=example.com \
+    --set global.networking.scopes.internal.publishDns=true \
+    --set p2p.service.type=LoadBalancer \
+    --set networking.p2p.scopes='{internal}'
+
+check "mining-pool standalone, API published" \
+  helm template mp charts/mining-pool \
+    --set bitcoin.rpc.host=some-node --set bitcoin.existingSecret.name=some-secret \
+    --set global.networking.baseDomain=example.com \
+    --set global.networking.scopes.internal.issuer=internal-ca \
+    --set networking.api.scopes='{internal}'
 
 hr
 if [ "$failures" -ne 0 ]; then

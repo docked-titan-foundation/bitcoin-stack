@@ -4,9 +4,20 @@ metadata:
   name: {{ include "mining-pool.stratum.name" . }}
   labels:
     {{- include "mining-pool.labels" . | nindent 4 }}
-  {{- with .Values.stratum.service.annotations }}
+  {{- /* Stratum is a raw TCP stream — no Host header, no SNI — so an ingress
+         controller has nothing to route it on. Publishing it means one thing: a
+         DNS record pointing at this Service's address, so miners can be aimed at
+         a name instead of whatever IP MetalLB handed out. All scopes share the
+         one annotation; external-dns reads a comma-separated list. */ -}}
+  {{- $ann := include "mining-pool.networking.serviceAnnotations" (dict "ctx" . "endpoint" (dig "stratum" dict (.Values.networking | default dict))) }}
+  {{- if or $ann .Values.stratum.service.annotations }}
   annotations:
+    {{- with $ann }}
+    {{- . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.stratum.service.annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- end }}
 spec:
   type: {{ .Values.stratum.service.type }}
