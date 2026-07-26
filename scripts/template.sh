@@ -279,7 +279,7 @@ assert_tcp_record() {
   out="$(render "${NET_BASE[@]}" \
     --set global.networking.scopes.internal.publishDns=true \
     --set global.networking.scopes.external.publishDns=true \
-    --set 'global.networking.scopes.external.annotations.external-dns\.alpha\.kubernetes\.io/cloudflare-proxied=false' \
+    --set-string 'global.networking.scopes.external.annotations.external-dns\.alpha\.kubernetes\.io/cloudflare-proxied=false' \
     --set mining-pool.networking.stratum.scopes='{internal,external}')"
 
   grep -q 'hostname: "stratum.internal.example.com,stratum.example.com"' <<<"$out" \
