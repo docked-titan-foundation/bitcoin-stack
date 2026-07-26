@@ -207,6 +207,21 @@ jobs:
           curl -sL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
             | tar xz -C /usr/local/bin kubeconform
 
+      # The schemas are immutable for a pinned Kubernetes version, so fetching
+      # them once per runner beats fetching them on every one of template.sh's
+      # validate calls — which is what made unrelated chart checks fail at random
+      # whenever raw.githubusercontent.com hiccuped.
+      - name: Cache JSON schemas
+        uses: actions/cache@v4
+        with:
+          path: .cache/kubeconform
+          # Rotates when the charts change, because a new resource kind means a
+          # schema the old cache does not hold. restore-keys falls back to the
+          # nearest previous cache, so a chart edit refetches only what is new
+          # rather than everything.
+          key: kubeconform-v0.7.0-k8s1.25.0-${{ hashFiles('charts/**') }}
+          restore-keys: kubeconform-v0.7.0-k8s1.25.0-
+
       # For a new release the working tree still carries the previous version, so
       # apply the release version to the charts (and the umbrella's dependency
       # pins) before packaging. A rebuild's tag is already at its version.

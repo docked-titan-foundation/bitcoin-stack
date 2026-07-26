@@ -4,6 +4,10 @@
 build/
 dist/
 
+# Downloaded JSON schemas, cached by scripts/template.sh so a run does not refetch
+# every resource kind from raw.githubusercontent.com.
+.cache/
+
 # Python
 __pycache__/
 *.py[cod]
