@@ -1,3 +1,10 @@
+# [1.0.0-beta.2](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-07-26)
+
+
+### Features
+
+* **stack:** publish endpoints under hostnames, with certificates ([b01e86f](https://github.com/docked-titan-foundation/bitcoin-stack/commit/b01e86f6e9c40492340cc14cabda9c4c21658641))
+
 # 1.0.0-beta.1 (2026-07-24)
 
 
