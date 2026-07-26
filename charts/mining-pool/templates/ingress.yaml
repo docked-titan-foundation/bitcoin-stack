@@ -1,0 +1,71 @@
+{{- /*
+One Ingress per scope, not one Ingress carrying every hostname.
+
+Scopes differ in the annotations they need — a different cert-manager issuer, a
+different TTL, provider options that apply to one and not the other — and an
+Ingress carries annotations per object, not per rule. Two scopes on one object
+would have to agree on all of them.
+
+Renders only for the public-pool stats API. Stratum is raw TCP, so it gets a DNS
+record on its Service instead (see services.yaml), and ckpool has no HTTP surface
+to publish at all — the guard in _networking.tpl refuses that combination rather
+than rendering an Ingress onto a Service that was never created.
+*/ -}}
+{{- $api := dig "api" dict (.Values.networking | default dict) -}}
+{{- if and (ne .Values.pool.implementation "ckpool") (get $api "scopes") -}}
+{{- range $scopeName := $api.scopes }}
+{{- $scope := fromYaml (include "mining-pool.networking.scope" (dict "ctx" $ "scope" $scopeName)) }}
+{{- $host := include "mining-pool.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $api) }}
+{{- $secret := include "mining-pool.networking.tlsSecret" (dict "ctx" $ "scope" $scopeName "endpoint" $api "base" (include "mining-pool.api.name" $)) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-%s" (include "mining-pool.api.name" $) $scopeName }}
+  labels:
+    {{- include "mining-pool.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ include "mining-pool.name" $ }}
+    app.kubernetes.io/component: api
+    bitcoin-stack.io/scope: {{ $scopeName }}
+  annotations:
+    {{- if $scope.issuer }}
+    {{- if eq $scope.issuerKind "Issuer" }}
+    cert-manager.io/issuer: {{ $scope.issuer | quote }}
+    {{- else }}
+    cert-manager.io/cluster-issuer: {{ $scope.issuer | quote }}
+    {{- end }}
+    {{- end }}
+    {{- if $scope.publishDns }}
+    external-dns.alpha.kubernetes.io/hostname: {{ $host | quote }}
+    external-dns.alpha.kubernetes.io/ttl: {{ $scope.ttl | quote }}
+    external-dns.alpha.kubernetes.io/action: sync
+    {{- end }}
+    {{- with $scope.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with (get $api "annotations") }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with (get $api "className") }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if $secret }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $secret | quote }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mining-pool.api.name" $ }}
+                port:
+                  number: {{ $.Values.pool.publicPool.api.port }}
+{{- end }}
+{{- end }}

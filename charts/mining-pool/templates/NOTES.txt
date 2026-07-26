@@ -5,11 +5,32 @@
   node      {{ .Values.bitcoin.rpc.host }}:{{ .Values.bitcoin.rpc.port }}
 
 Point a miner at it:
+{{- $stratumNet := dig "stratum" dict (.Values.networking | default dict) }}
+{{- $stratumScopes := get $stratumNet "scopes" | default list }}
+{{- if $stratumScopes }}
+{{- range $scopeName := $stratumScopes }}
+{{- $scope := fromYaml (include "mining-pool.networking.scope" (dict "ctx" $ "scope" $scopeName)) }}
+{{- if $scope.publishDns }}
+
+  stratum+tcp://{{ include "mining-pool.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $stratumNet) }}:{{ $.Values.stratum.port }}   ({{ $scopeName }})
+{{- end }}
+{{- end }}
+
+  Those names are requests to external-dns, not facts. It has to be running and
+  it has to own the zone, or the records never appear — check the Service picked
+  up an address first:
+
+    kubectl get svc -n {{ .Release.Namespace }} {{ include "mining-pool.stratum.name" . }}
+{{- else }}
 
   kubectl get svc -n {{ .Release.Namespace }} {{ include "mining-pool.stratum.name" . }}
 
 {{- if eq .Values.stratum.service.type "LoadBalancer" }}
   # then set the miner's pool URL to  stratum+tcp://<EXTERNAL-IP>:{{ .Values.stratum.port }}
+
+  A bare IP in a miner's config breaks the day the LoadBalancer hands out a
+  different one. networking.stratum.scopes gives this port a stable name instead.
+{{- end }}
 {{- end }}
 
   Username = the Bitcoin address you want a found block to pay. That address is
@@ -42,6 +63,22 @@ Point a miner at it:
 
 pool.network is "{{ .Values.pool.network }}" — this pool is NOT mining for real
 bitcoin.
+{{- end }}
+
+{{- $apiNet := dig "api" dict (.Values.networking | default dict) }}
+{{- if get $apiNet "scopes" }}
+
+The stats API is published at:
+{{- range $scopeName := $apiNet.scopes }}
+{{- $host := include "mining-pool.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $apiNet) }}
+{{- $secret := include "mining-pool.networking.tlsSecret" (dict "ctx" $ "scope" $scopeName "endpoint" $apiNet "base" (include "mining-pool.api.name" $)) }}
+
+  {{ if $secret }}https{{ else }}http{{ end }}://{{ $host }}   ({{ $scopeName }}{{ if not $secret }}, NO TLS{{ end }})
+{{- end }}
+
+  This is public-pool's JSON API, not a web UI — the dashboard is a separate
+  frontend that reads it. It is read-only and unauthenticated, so anyone who can
+  reach the name can read your hashrate and worker names.
 {{- end }}
 
 A pool is only as fresh as its block notifications. This chart wires ZMQ

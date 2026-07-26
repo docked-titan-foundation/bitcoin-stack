@@ -22,6 +22,57 @@ global:
     zmqRawBlockPort: 28332
     secretName: bitcoin-node-rpc-credentials
 
+  # ── Hostnames and certificates ───────────────────────────────────────────────
+  # Off by default. Nothing below has any effect until an endpoint opts in, and
+  # no endpoint does out of the box.
+  #
+  # A scope is HOW a name gets published: which subdomain it sits under, which
+  # cert-manager issuer signs it, whether external-dns creates the record. It is
+  # written once here and read by both subcharts, so the domain and the issuers
+  # live in exactly one place.
+  #
+  # WHAT gets published is the other half, and lives with the component that owns
+  # the endpoint — `bitcoin-node.networking` and `mining-pool.networking` below.
+  # Each endpoint names the scopes it is published in, as a list. Publishing
+  # something on the LAN and publicly at the same time is a two-element list; it
+  # is not a mode, and there is no second block to keep in sync.
+  #
+  # `internal` and `external` are ordinary entries, not special names. Rename
+  # them, drop one, or add a third.
+  #
+  # This chart emits annotations for cert-manager and external-dns. It does not
+  # install either of them, and does not check that they are running.
+  networking:
+    # The domain every derived hostname hangs off. Required once anything is
+    # published, unless every endpoint pins its own host explicitly.
+    baseDomain: ""
+
+    scopes:
+      # A name that resolves on the LAN only.
+      #
+      # This does NOT imply a self-signed certificate. An ACME issuer solving the
+      # DNS-01 challenge will issue a publicly-trusted certificate for a host
+      # that resolves nowhere on the internet, because DNS-01 proves control of
+      # the zone and never connects to the endpoint. `issuer: letsencrypt-prod`
+      # is a perfectly normal thing to put here.
+      internal:
+        subdomain: internal          # -> pool.internal.example.com
+        issuer: ""                   # cert-manager issuer; empty = no cert issued
+        issuerKind: ClusterIssuer    # ClusterIssuer | Issuer
+        publishDns: false            # let external-dns create the record
+        ttl: "300"
+        annotations: {}              # provider extras, added to Ingresses only
+
+      external:
+        subdomain: ""                # -> pool.example.com
+        issuer: ""
+        issuerKind: ClusterIssuer
+        publishDns: false
+        ttl: "300"
+        # Provider-specific options go here, e.g. for Cloudflare:
+        #   external-dns.alpha.kubernetes.io/cloudflare-proxied: "false"
+        annotations: {}
+
 # ── The node ───────────────────────────────────────────────────────────────────
 # Every value of the bitcoin-node chart is available here. See its values.yaml —
 # these are only the ones worth surfacing.
@@ -57,6 +108,22 @@ bitcoin-node:
   secret:
     provider: generated
 
+  # Which of the node's endpoints get a hostname. Scopes are defined once in
+  # global.networking above; this is the list of them each endpoint publishes in.
+  networking:
+    # A stable name for the address peers connect to. Only meaningful once
+    # p2p.service.type is LoadBalancer or NodePort — a ClusterIP has no address
+    # worth publishing, and the chart refuses that combination.
+    p2p:
+      scopes: []
+
+    # RPC. Full control over the node, so publishing it is guarded: the render
+    # fails unless rpc.allowSubnet has been narrowed away from 0.0.0.0/0 and
+    # every listed scope resolves a certificate. If what you want is a read-only
+    # stats page, publish mining-pool.networking.api instead.
+    rpc:
+      scopes: []
+
 # ── The pool ───────────────────────────────────────────────────────────────────
 mining-pool:
   enabled: true
@@ -77,3 +144,18 @@ mining-pool:
       # address rather than an HTTP Ingress. On a homelab, MetalLB gives you one.
       type: LoadBalancer
       loadBalancerIP: ""
+
+  # Which of the pool's endpoints get a hostname. Scopes are defined once in
+  # global.networking above; this is the list of them each endpoint publishes in.
+  networking:
+    # The address miners are pointed at. This is the one worth doing: a miner
+    # configured with stratum+tcp://stratum.example.com:3333 survives the
+    # LoadBalancer IP changing, and one configured with a bare IP does not.
+    stratum:
+      scopes: []
+
+    # The public-pool JSON stats API, over HTTPS. public-pool only — ckpool has
+    # no HTTP surface at all, and the chart refuses that combination rather than
+    # pointing an Ingress at a Service it never created.
+    api:
+      scopes: []

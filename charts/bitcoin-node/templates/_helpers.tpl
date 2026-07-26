@@ -216,4 +216,9 @@ destroy a datadir that takes weeks to rebuild.
 {{/* A pruned node on a huge volume, or an archival node on a tiny one, are both
      silent money-wasters — and the second one corrupts the chainstate when the
      disk fills mid-write. Warn loudly; do not block. */}}
+
+{{/* Hostnames and certificates. Called from here rather than from the templates
+     that render Ingresses so that it runs even when nothing is published — a
+     typo'd scope name must fail the render, not quietly produce no object. */}}
+{{- include "bitcoin-node.networking.validate" . -}}
 {{- end -}}

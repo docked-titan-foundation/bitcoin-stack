@@ -124,4 +124,9 @@ Guards.
 {{- fail (printf "\n\nThe %s image is not pinned by digest.\nA tag is a mutable pointer, and this process builds the transaction that pays out\na found block.\nPin it, or set safety.allowUnpinnedImage=true to accept the risk deliberately.%s\n" $impl $hint) -}}
 {{- end -}}
 {{- end -}}
+
+{{/* Hostnames and certificates. Called from here rather than from the templates
+     that render Ingresses so that it runs even when nothing is published — a
+     typo'd scope name must fail the render, not quietly produce no object. */}}
+{{- include "mining-pool.networking.validate" . -}}
 {{- end -}}

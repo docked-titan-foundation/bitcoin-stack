@@ -96,7 +96,60 @@
         "enabled": { "type": "boolean" }
       }
     },
-    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 }
+    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+    "networking": {
+      "type": "object",
+      "description": "Which endpoints get a hostname, as a list of scope names each. The scopes themselves live in global.networking.scopes. Unknown endpoint keys are rejected in templates/_networking.tpl rather than here, so the error can explain why — notably that ZMQ has no Service of its own to publish.",
+      "properties": {
+        "p2p": {
+          "type": "object",
+          "description": "Raw TCP: a DNS record only, and only when p2p.service.type is LoadBalancer or NodePort.",
+          "properties": {
+            "scopes": { "type": "array", "items": { "type": "string" } },
+            "name": { "type": "string" },
+            "hosts": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        },
+        "rpc": {
+          "type": "object",
+          "description": "HTTP: one Ingress per scope. Refuses to render unless rpc.allowSubnet has been narrowed and every listed scope resolves TLS.",
+          "properties": {
+            "scopes": { "type": "array", "items": { "type": "string" } },
+            "name": { "type": "string" },
+            "hosts": { "type": "object", "additionalProperties": { "type": "string" } },
+            "tlsSecrets": { "type": "object", "additionalProperties": { "type": "string" } },
+            "className": { "type": "string" },
+            "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "global": {
+      "type": "object",
+      "properties": {
+        "networking": {
+          "type": "object",
+          "properties": {
+            "baseDomain": { "type": "string" },
+            "scopes": {
+              "type": "object",
+              "description": "How a name is published. Keys are arbitrary — 'internal' and 'external' are only the shipped defaults.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "subdomain": { "type": "string" },
+                  "issuer": { "type": "string" },
+                  "issuerKind": { "type": "string", "enum": ["ClusterIssuer", "Issuer"] },
+                  "publishDns": { "type": "boolean" },
+                  "ttl": { "type": ["string", "integer"] },
+                  "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "required": ["node", "images", "resources", "safety", "storage"]
 }

@@ -32,6 +32,7 @@
 - [Install](#-install)
   - [Common variations](#common-variations)
   - [Point a miner at it](#point-a-miner-at-it)
+  - [Hostnames and certificates](#hostnames-and-certificates)
 - [What this chart does differently](#-what-this-chart-does-differently)
 - [What to expect from solo mining](#-what-to-expect-from-solo-mining)
 - [Verifying the chart](#-verifying-the-chart)
@@ -284,6 +285,106 @@ Then configure the miner (a Bitaxe, an ASIC, or `cgminer`) with:
 
 If you find a block, the coinbase pays the address in that username. That's the
 whole point — verify it's *your* address.
+
+### Hostnames and certificates
+
+A bare IP in a miner's config breaks the day MetalLB hands out a different one.
+This chart can give its endpoints stable names, and certificates where the
+protocol can use them. It is **off by default** — nothing below renders until an
+endpoint opts in.
+
+Two concepts, each written in exactly one place:
+
+- **Scopes** (`global.networking.scopes`) — *how* a name is published: the
+  subdomain, the cert-manager issuer, whether external-dns creates the record.
+  Written once for the whole release; both subcharts read the same map.
+- **Endpoints** (`<component>.networking.<endpoint>.scopes`) — *what* gets
+  published, as a list of scope names.
+
+Publishing something on the LAN **and** publicly is a two-element list. It is not
+a mode, and there is no second block to keep in sync:
+
+```yaml
+global:
+  networking:
+    baseDomain: example.com
+    scopes:
+      internal:
+        issuer: internal-ca         # or letsencrypt-prod — see the note below
+        publishDns: true
+      external:
+        issuer: letsencrypt-prod
+        publishDns: true
+
+bitcoin-node:
+  p2p:
+    service:
+      type: LoadBalancer            # a ClusterIP has no address worth publishing
+  networking:
+    p2p:
+      scopes: [internal]            # node.internal.example.com
+
+mining-pool:
+  networking:
+    api:
+      scopes: [internal, external]  # pool.internal.example.com + pool.example.com
+    stratum:
+      scopes: [external]            # stratum.example.com
+```
+
+Miners then get `stratum+tcp://stratum.example.com:3333`, which survives the
+LoadBalancer IP changing.
+
+`internal` and `external` are ordinary map keys, not special names — rename them,
+drop one, or add a third.
+
+**`internal` does not mean self-signed.** An ACME issuer solving the DNS-01
+challenge will issue a publicly-trusted certificate for a host that resolves only
+on your LAN, because DNS-01 proves control of the DNS zone and never connects to
+the endpoint. `issuer: letsencrypt-prod` on an internal scope is a perfectly
+normal thing to do.
+
+#### What each endpoint can get
+
+Ingress-versus-record is not a setting. It follows from the protocol: an HTTP
+endpoint can sit behind an ingress controller and terminate TLS, and a raw TCP
+stream — no `Host` header, no SNI — gives the controller nothing to route on.
+
+| Endpoint | Protocol | Gets |
+|---|---|---|
+| `mining-pool.networking.stratum` | raw TCP | DNS record |
+| `mining-pool.networking.api` | HTTP | Ingress + TLS + record |
+| `bitcoin-node.networking.p2p` | raw TCP | DNS record |
+| `bitcoin-node.networking.rpc` | HTTP | Ingress + TLS + record — **guarded** |
+
+ZMQ is deliberately absent: its ports are served from the ClusterIP RPC Service,
+so there is no address to publish, and it is unauthenticated besides.
+
+Encrypted stratum (`stratum+ssl`) needs a TLS-terminating proxy in front of the
+pool, which this chart does not ship.
+
+#### Publishing the node's RPC
+
+RPC is full control over the node — it can stop the process, and move coins if a
+wallet is loaded — behind HTTP Basic auth and nothing else. It can be published,
+but the chart refuses to render until two things are true:
+
+1. **`rpc.allowSubnet` is narrowed.** Its `0.0.0.0/0` default is only safe
+   because the Service is ClusterIP-only, so the subnet never spans more than the
+   pod network. An Ingress breaks that premise: the controller forwards from its
+   own pod IP, which is inside the allowed range.
+2. **Every listed scope resolves a certificate** — an `issuer`, or your own
+   Secret via `tlsSecrets`. There is no plaintext RPC Ingress, on any scope.
+
+If what you want is a read-only page of hashrate and workers, publish
+`mining-pool.networking.api` instead and leave RPC alone.
+
+#### What this chart does not do
+
+It emits annotations for **cert-manager** and **external-dns**. It does not
+install either of them, and does not check that they are running — a hostname in
+the rendered output is a request, not a fact. If external-dns is not running or
+does not own the zone, the record never appears.
 
 ## ✨ What this chart does differently
 

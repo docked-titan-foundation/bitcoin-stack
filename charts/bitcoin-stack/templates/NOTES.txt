@@ -26,12 +26,70 @@ node is synced it is building templates on top of an old chain tip. Any block it
 {{- if $pool.enabled }}
 
 Point your miners at:
+{{- $stratumNet := dig "networking" "stratum" dict $pool }}
+{{- $stratumScopes := get $stratumNet "scopes" | default list }}
+{{- if $stratumScopes }}
+{{- range $scopeName := $stratumScopes }}
+{{- $scope := fromYaml (include "mining-pool.networking.scope" (dict "ctx" $ "scope" $scopeName)) }}
+{{- if $scope.publishDns }}
+
+  stratum+tcp://{{ include "mining-pool.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $stratumNet) }}:{{ $pool.stratum.port }}   ({{ $scopeName }})
+{{- end }}
+{{- end }}
+
+  Those names are requests to external-dns, not facts — it has to be running and
+  to own the zone. Check the Service got an address first:
+
+    kubectl get svc -n {{ .Release.Namespace }} mining-pool-stratum
+{{- else }}
 
   kubectl get svc -n {{ .Release.Namespace }} mining-pool-stratum
+{{- end }}
 
   The miner's stratum USERNAME must be the Bitcoin address you want a found block
   to pay out to. That is configured on the miner, not here. Solo mining sends the
   coinbase straight to it — an address typo means you mine for nobody.
+{{- $apiNet := dig "networking" "api" dict $pool }}
+{{- if get $apiNet "scopes" }}
+
+The pool's stats API (read-only, unauthenticated):
+{{- range $scopeName := $apiNet.scopes }}
+{{- $secret := include "mining-pool.networking.tlsSecret" (dict "ctx" $ "scope" $scopeName "endpoint" $apiNet "base" "mining-pool-api") }}
+
+  {{ if $secret }}https{{ else }}http{{ end }}://{{ include "mining-pool.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $apiNet) }}   ({{ $scopeName }}{{ if not $secret }}, NO TLS{{ end }})
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- if $node.enabled }}
+{{- $p2pNet := dig "networking" "p2p" dict $node }}
+{{- if get $p2pNet "scopes" }}
+
+The node's P2P port is published as:
+{{- range $scopeName := $p2pNet.scopes }}
+
+  {{ include "bitcoin-node.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $p2pNet) }}:{{ $node.p2p.port }}   ({{ $scopeName }})
+{{- end }}
+
+  A name is not reachability: inbound peers also need the port forwarded to the
+  LoadBalancer address on your router. And bitcoind will not announce this name
+  unless you tell it to — bitcoin-node.node.extraConfig: ["externalip=..."].
+{{- end }}
+{{- $rpcNet := dig "networking" "rpc" dict $node }}
+{{- if get $rpcNet "scopes" }}
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  THE NODE'S RPC PORT IS PUBLISHED.                                           ║
+║                                                                              ║
+{{- range $scopeName := $rpcNet.scopes }}
+║  https://{{ printf "%-68s" (include "bitcoin-node.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $rpcNet)) }}║
+{{- end }}
+║                                                                              ║
+║  Anyone who reaches that with the RPC password can stop the node, and can     ║
+║  move coins if a wallet is ever loaded. HTTP Basic auth is the only thing in  ║
+║  front of it — no rate limiting, no lockout, no second factor.                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+{{- end }}
 {{- end }}
 
 Before you touch this release again, read:

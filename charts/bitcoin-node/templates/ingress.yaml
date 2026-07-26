@@ -1,0 +1,72 @@
+{{- /*
+One Ingress per scope, not one Ingress carrying every hostname.
+
+Scopes differ in the annotations they need — a different cert-manager issuer, a
+different TTL, provider options that apply to one and not the other — and an
+Ingress carries annotations per object, not per rule. Two scopes on one object
+would have to agree on all of them.
+
+Renders only for RPC. P2P is raw TCP, so it gets a DNS record on its Service
+instead (see services.yaml); ZMQ has no Service of its own at all.
+
+Publishing RPC is refused outright unless it resolves TLS and rpc.allowSubnet has
+been narrowed — see the guards in _networking.tpl.
+*/ -}}
+{{- $rpc := dig "rpc" dict (.Values.networking | default dict) -}}
+{{- if and .Values.rpc.enabled (get $rpc "scopes") -}}
+{{- range $scopeName := $rpc.scopes }}
+{{- $scope := fromYaml (include "bitcoin-node.networking.scope" (dict "ctx" $ "scope" $scopeName)) }}
+{{- $host := include "bitcoin-node.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $rpc) }}
+{{- $secret := include "bitcoin-node.networking.tlsSecret" (dict "ctx" $ "scope" $scopeName "endpoint" $rpc "base" (include "bitcoin-node.rpc.name" $)) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-%s" (include "bitcoin-node.rpc.name" $) $scopeName }}
+  labels:
+    {{- include "bitcoin-node.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ include "bitcoin-node.name" $ }}
+    app.kubernetes.io/component: rpc
+    bitcoin-stack.io/scope: {{ $scopeName }}
+  annotations:
+    {{- if $scope.issuer }}
+    {{- if eq $scope.issuerKind "Issuer" }}
+    cert-manager.io/issuer: {{ $scope.issuer | quote }}
+    {{- else }}
+    cert-manager.io/cluster-issuer: {{ $scope.issuer | quote }}
+    {{- end }}
+    {{- end }}
+    {{- if $scope.publishDns }}
+    external-dns.alpha.kubernetes.io/hostname: {{ $host | quote }}
+    external-dns.alpha.kubernetes.io/ttl: {{ $scope.ttl | quote }}
+    external-dns.alpha.kubernetes.io/action: sync
+    {{- end }}
+    {{- with $scope.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with (get $rpc "annotations") }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with (get $rpc "className") }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if $secret }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $secret | quote }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bitcoin-node.rpc.name" $ }}
+                port:
+                  number: {{ include "bitcoin-node.rpcPort" $ }}
+{{- end }}
+{{- end }}

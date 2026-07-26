@@ -113,6 +113,88 @@ stratum:
     externalTrafficPolicy: Local
     annotations: {}
 
+# ── Hostnames and certificates ─────────────────────────────────────────────────
+# Off by default: every endpoint below starts with an empty `scopes` list, and an
+# empty list means "not published". Nothing here renders until you opt in.
+#
+# HOW a name is published lives in `global.networking.scopes` — one map, shared
+# by every chart in the release, so the domain and the issuers are written once.
+# WHAT is published lives here, as a list of scope names per endpoint. Publishing
+# something in two places at once is just a two-element list.
+#
+# Whether an endpoint gets an Ingress or only a DNS record is not a setting: it
+# follows from the protocol. The stats API is HTTP and can terminate TLS behind
+# an Ingress. Stratum is a raw TCP stream with no Host header and no SNI, so an
+# ingress controller has nothing to route on — it gets a name pointing at its
+# LoadBalancer address, and no certificate.
+#
+# The chart emits annotations. It does not install cert-manager or external-dns,
+# and does not check that they are running.
+networking:
+  # The address miners are pointed at. This is the one that pays for itself: a
+  # miner configured with stratum+tcp://stratum.example.com:3333 keeps working
+  # when the LoadBalancer IP changes, and one configured with a bare IP does not.
+  #
+  # Requires stratum.service.type to be LoadBalancer or NodePort.
+  stratum:
+    scopes: []
+    name: stratum
+    # Override the derived hostname for one scope:
+    #   hosts: {external: pool.example.net}
+    hosts: {}
+
+  # The public-pool JSON stats API. Read-only, and the thing you actually want
+  # published when you are tempted to publish the node's RPC.
+  #
+  # public-pool only: ckpool has no HTTP surface, and asking for this under
+  # ckpool is refused rather than rendering an Ingress onto a Service that does
+  # not exist.
+  api:
+    scopes: []
+    name: pool
+    hosts: {}
+    # Bring your own certificate instead of issuing one, per scope:
+    #   tlsSecrets: {internal: my-existing-tls-secret}
+    tlsSecrets: {}
+    # Ingress class. Empty uses the cluster's default IngressClass.
+    className: ""
+    # Extra annotations, merged over the generated ones.
+    annotations: {}
+
+# ── Scopes: how a name gets published ──────────────────────────────────────────
+# Under the umbrella chart this is set once at the top level and both subcharts
+# read it. The defaults here exist so this chart also works installed on its own.
+#
+# `internal` and `external` are ordinary entries, not special names — rename
+# them, drop one, or add a third.
+global:
+  networking:
+    # The domain hostnames are derived from. Required once anything is published.
+    baseDomain: ""
+
+    scopes:
+      # A name that resolves on the LAN only. Note that this does NOT imply a
+      # self-signed certificate: an ACME issuer solving DNS-01 will issue a
+      # publicly-trusted cert for a host that resolves nowhere on the internet,
+      # because DNS-01 never connects to the endpoint.
+      internal:
+        subdomain: internal          # -> pool.internal.example.com
+        issuer: ""                   # cert-manager issuer; empty = no cert issued
+        issuerKind: ClusterIssuer    # ClusterIssuer | Issuer
+        publishDns: false            # let external-dns create the record
+        ttl: "300"
+        annotations: {}              # provider extras, added to Ingresses only
+
+      external:
+        subdomain: ""                # -> pool.example.com
+        issuer: ""
+        issuerKind: ClusterIssuer
+        publishDns: false
+        ttl: "300"
+        # Provider-specific options go here, e.g. for Cloudflare:
+        #   external-dns.alpha.kubernetes.io/cloudflare-proxied: "false"
+        annotations: {}
+
 # ── Image (public-pool) ────────────────────────────────────────────────────────
 # Pinned by digest. Do not reformat these three lines — Renovate's regex matches
 # them.

@@ -4,6 +4,21 @@
   dbcache   {{ .Values.node.config.dbcache }} MiB (memory limit {{ .Values.resources.limits.memory }})
   datadir   {{ .Values.storage.size }}{{ if gt (int (default 0 .Values.node.config.prune)) 0 }}, pruned to {{ .Values.node.config.prune }} MiB{{ else }}, archival{{ end }}
   RPC       {{ include "bitcoin-node.rpcHost" . }}:{{ .Values.rpc.port }} (in-cluster only)
+{{- $p2pNet := dig "p2p" dict (.Values.networking | default dict) }}
+{{- if get $p2pNet "scopes" }}
+  P2P       {{ range $i, $s := $p2pNet.scopes }}{{ if $i }}, {{ end }}{{ include "bitcoin-node.networking.host" (dict "ctx" $ "scope" $s "endpoint" $p2pNet) }}{{ end }}:{{ .Values.p2p.port }}
+
+  The P2P name is a request to external-dns, not a fact — it needs to be running
+  and to own the zone. And a name is not reachability: inbound peers also need
+  the port forwarded to the LoadBalancer address on your router.
+
+  bitcoind does not announce that name on its own. To have it tell peers where it
+  lives, set it yourself:
+
+    node:
+      extraConfig:
+        - externalip={{ include "bitcoin-node.networking.host" (dict "ctx" $ "scope" (first $p2pNet.scopes) "endpoint" $p2pNet) }}
+{{- end }}
 
 Watch it sync:
 
@@ -32,6 +47,27 @@ the logs as `progress=0.xx`.
 The RPC credential comes from the Secret "{{ .Values.secret.existingSecret.name }}",
 which must already exist and must contain the keys `rpc.conf`, `rpc-password` and
 `rpc-username`. If bitcoind cannot start, check that first.
+{{- end }}
+
+{{- $rpcNet := dig "rpc" dict (.Values.networking | default dict) }}
+{{- if get $rpcNet "scopes" }}
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  THE RPC PORT IS PUBLISHED.                                                  ║
+║                                                                              ║
+{{- range $scopeName := $rpcNet.scopes }}
+║  https://{{ printf "%-68s" (include "bitcoin-node.networking.host" (dict "ctx" $ "scope" $scopeName "endpoint" $rpcNet)) }}║
+{{- end }}
+║                                                                              ║
+║  This is not a dashboard. Anyone who reaches it with the RPC password can     ║
+║  stop the node, and can move coins if a wallet is ever loaded. It is          ║
+║  protected by HTTP Basic auth and nothing else — no rate limiting, no         ║
+║  lockout, no second factor.                                                   ║
+║                                                                              ║
+║  rpc.allowSubnet is {{ printf "%-58s" .Values.rpc.allowSubnet }}║
+║  Confirm that is really the ingress controller's pod CIDR and not something   ║
+║  wider. Everything inside it can reach RPC through the Ingress.               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 {{- end }}
 
 Two things that will cost you days if you learn them the hard way:
