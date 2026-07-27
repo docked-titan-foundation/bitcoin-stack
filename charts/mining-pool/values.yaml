@@ -71,8 +71,8 @@ pool:
     # Do not reformat these three lines — Renovate's regex matches them.
     image:
       repository: ghcr.io/docked-titan-foundation/ckpool
-      tag: "v1.0.0"
-      digest: "sha256:80c3bbc3b63b9602f7adfeca30cb8d16b9b73245e55dc92cc7600b1ed29a98e7"
+      tag: "v1.1.0"
+      digest: "sha256:725d564e8ed8fa3fab0c2ebe6b52c8e9243a301eb3916a23460db2b8a4cccd50"
 
     # ckpool.conf, as data — rendered to JSON verbatim. Any ckpool option works
     # without touching the chart. `btcd`, `serverurl`, `zmqblock` and solo mode
