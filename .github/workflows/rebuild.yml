@@ -224,7 +224,7 @@ jobs:
     permissions:
       issues: write
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v9
         with:
           script: |
             const version = '${{ needs.resolve.outputs.version }}';
