@@ -8,7 +8,7 @@ kubectl       = "1.34.1"
 # Backend-qualified: mise's short-name registry no longer maps bare
 # `chart-testing`. This provides the `ct` binary the lint tasks call.
 "aqua:helm/chart-testing" = "3.14.0"
-kubeconform   = "0.7.0"
+kubeconform   = "0.8.0"
 kind          = "0.32.0"
 yamllint      = "1.37.1"
 shellcheck    = "0.11.0"
