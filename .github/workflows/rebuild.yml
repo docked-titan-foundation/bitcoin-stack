@@ -34,7 +34,7 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       found: ${{ steps.resolve.outputs.found }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -71,7 +71,7 @@ jobs:
     outputs:
       chart_digest: ${{ steps.push.outputs.digest }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: v${{ needs.resolve.outputs.version }}
 
