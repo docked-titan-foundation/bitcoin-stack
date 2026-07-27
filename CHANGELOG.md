@@ -1,3 +1,10 @@
+# [1.0.0-beta.4](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-07-27)
+
+
+### Bug Fixes
+
+* **pool:** update docked-titan-foundation/ckpool docker tag to v1.1.0 ([e304b58](https://github.com/docked-titan-foundation/bitcoin-stack/commit/e304b586e83262e614df53bf804f0b7d796615be))
+
 # [1.0.0-beta.3](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2026-07-27)
 
 
