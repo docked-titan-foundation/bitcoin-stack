@@ -200,8 +200,8 @@ global:
 # them.
 image:
   repository: ghcr.io/docked-titan-foundation/public-pool
-  tag: "v1.0.0"
-  digest: "sha256:5e405d158273ef11ed107fc82f0f5ddcf8bfe0168ba9a1cd5555063ee01efa53"
+  tag: "v1.0.1"
+  digest: "sha256:220477601666415e8050b519652c054d700d2a57396d974cf3a359e903ff2ab7"
   pullPolicy: IfNotPresent
 
 # ── The Bitcoin node to mine on ────────────────────────────────────────────────
