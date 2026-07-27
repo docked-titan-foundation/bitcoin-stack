@@ -38,7 +38,7 @@ jobs:
 
       - uses: azure/setup-helm@v5
         with:
-          version: v3.21.3
+          version: v4.2.3
 
       - uses: helm/chart-testing-action@v2
 
@@ -125,7 +125,7 @@ jobs:
       - uses: azure/setup-helm@v5
         if: steps.dryrun.outputs.is_release != 'true'
         with:
-          version: v3.21.3
+          version: v4.2.3
 
       - uses: sigstore/cosign-installer@v4.1.2
         if: steps.dryrun.outputs.is_release != 'true'
@@ -200,7 +200,7 @@ jobs:
 
       - uses: azure/setup-helm@v5
         with:
-          version: v3.21.3
+          version: v4.2.3
 
       - name: Install kubeconform
         run: |

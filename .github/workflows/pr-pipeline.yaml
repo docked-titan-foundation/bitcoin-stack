@@ -15,7 +15,7 @@ jobs:
 
       - uses: azure/setup-helm@v5
         with:
-          version: v3.21.3
+          version: v4.2.3
 
       - uses: helm/chart-testing-action@v2
 
@@ -79,7 +79,7 @@ jobs:
 
       - uses: azure/setup-helm@v5
         with:
-          version: v3.21.3
+          version: v4.2.3
 
       - name: Install kubeconform
         run: |
