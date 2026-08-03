@@ -72,7 +72,7 @@ pool:
     image:
       repository: ghcr.io/docked-titan-foundation/ckpool
       tag: "v1.1.0"
-      digest: "sha256:725d564e8ed8fa3fab0c2ebe6b52c8e9243a301eb3916a23460db2b8a4cccd50"
+      digest: "sha256:b6632a7559326cc291e3863ed2ef79c82f6135e56c8d1ede361175dc89345cf7"
 
     # ckpool.conf, as data — rendered to JSON verbatim. Any ckpool option works
     # without touching the chart. `btcd`, `serverurl`, `zmqblock` and solo mode
