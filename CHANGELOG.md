@@ -1,3 +1,11 @@
+# [1.0.0-beta.5](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-08-03)
+
+
+### Bug Fixes
+
+* **pool:** update docked-titan-foundation/ckpool:v1.1.0 docker digest to b6632a7 ([c8ca2f4](https://github.com/docked-titan-foundation/bitcoin-stack/commit/c8ca2f4c370e9335bbaacac90112c65ba2835c91))
+* **pool:** update docked-titan-foundation/public-pool:v1.0.1 docker digest to ac86fd2 ([650a76f](https://github.com/docked-titan-foundation/bitcoin-stack/commit/650a76f5ead5758fe05b911163d0aed3369d058c))
+
 # [1.0.0-beta.4](https://github.com/docked-titan-foundation/bitcoin-stack/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-07-27)
 
 
