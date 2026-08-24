@@ -4,7 +4,7 @@ node          = "24"
 
 # Chart toolchain
 helm          = "4.2.3"
-kubectl       = "1.36.3"
+kubectl       = "1.36.4"
 # Backend-qualified: mise's short-name registry no longer maps bare
 # `chart-testing`. This provides the `ct` binary the lint tasks call.
 "aqua:helm/chart-testing" = "3.14.0"
