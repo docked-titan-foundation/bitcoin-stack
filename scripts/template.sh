@@ -12,8 +12,39 @@ failures=0
 CHART=charts/bitcoin-stack
 
 # kubeconform needs the CRD schemas for anything outside core Kubernetes. The
-# only one this chart emits is ExternalSecret.
-SCHEMA_CRD='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+# only one this chart emits is ExternalSecret, and it is vendored under
+# tests/schemas rather than fetched.
+#
+# Vendoring is not only about the network being flaky. kubeconform tries schema
+# locations IN ORDER, so with a remote CRD catalog second, every ExternalSecret
+# validation first asks the core-Kubernetes schema repo for a CRD it cannot have
+# — a guaranteed 404, which caches nothing and therefore repeats on every single
+# run forever. Putting a local location first ends that: the file is found
+# immediately and nothing is requested. A missing local file costs one stat, so
+# core kinds fall through to `default` as before.
+#
+# Refresh it from the upstream catalog when external-secrets ships a new version:
+#   curl -sSL -o tests/schemas/external-secrets.io/externalsecret_v1.json \
+#     https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/external-secrets.io/externalsecret_v1.json
+SCHEMA_LOCAL='tests/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
+# `default` is a remote location too — it resolves to yannh/kubernetes-json-schema
+# on raw.githubusercontent.com, so EVERY resource kind is fetched, not just the
+# CRD above. Uncached that is 18 validate calls x up to 12 resources per run, and
+# any blip on that host surfaces as a random chart check "failing" for a reason
+# that has nothing to do with the chart. Cache the fetches instead: the schemas
+# are immutable for a pinned Kubernetes version.
+SCHEMA_CACHE="${SCHEMA_CACHE:-.cache/kubeconform}"
+mkdir -p "$SCHEMA_CACHE"
+
+# Pin what `default` validates against. Without this it tracks master, so the
+# same commit can pass today and fail tomorrow because upstream published a new
+# Kubernetes release.
+#
+# This is the FLOOR from the charts' kubeVersion (">=1.25.0-0"), not the newest
+# release, and deliberately so: validating against the oldest cluster the charts
+# claim to support is what proves the claim. Raise both together or neither.
+KUBE_VERSION="${KUBE_VERSION:-1.25.0}"
 
 hr() { printf '━%.0s' {1..78}; echo; }
 
@@ -46,9 +77,16 @@ check_guard() {
 
 render() { helm template bs "$CHART" "$@"; }
 
+# -ignore-missing-schemas is deliberately NOT set. It used to be, because the CRD
+# was fetched and a fetch can fail — but "could not check it" and "checked it and
+# it is fine" then reported identically, which is the same trap the guard checks
+# below exist to avoid. With the only CRD vendored, nothing is legitimately
+# missing, so a missing schema now means someone added a resource kind without
+# vendoring its schema, and that should fail rather than quietly skip.
 validate() {
-  render "$@" | kubeconform -strict -summary -ignore-missing-schemas \
-    -schema-location default -schema-location "$SCHEMA_CRD" >/dev/null
+  render "$@" | kubeconform -strict -summary \
+    -cache "$SCHEMA_CACHE" -kubernetes-version "$KUBE_VERSION" \
+    -schema-location "$SCHEMA_LOCAL" -schema-location default >/dev/null
 }
 
 # Every rendered container must be non-root, drop all capabilities, and run a
