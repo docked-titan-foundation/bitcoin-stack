@@ -82,8 +82,8 @@ images:
     digest: "sha256:7005235c5728c867abbd85c43e05725c06b451e26c31a40f4955e3f949d54669"
   core:
     repository: bitcoin/bitcoin
-    tag: "31.1"
-    digest: "sha256:da25cedc66b1daefff9f412ee196c901a899c3fa68a33b20849c3e08b5c40d63"
+    tag: "31.2"
+    digest: "sha256:e1311441eb589e69588060cc7cc0868bc999ab1f359160d7c31fd6d16862a92d"
 
 # Bring your own build. Leave repository empty to use the pinned preset for
 # node.implementation; set it (usually together with node.implementation: custom)
